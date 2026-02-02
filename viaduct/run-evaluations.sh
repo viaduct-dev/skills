@@ -112,6 +112,8 @@ run_evaluation() {
 
     if ! claude -p "$eval_query" \
                --allowedTools "Read,Glob,Grep,Write,Edit,Bash" \
+               --no-session-persistence \
+               --permission-mode "acceptEdits" \
                "$work_dir" > "$claude_output" 2>&1; then
         echo -e "  ${RED}Claude execution failed${NC}"
     fi
