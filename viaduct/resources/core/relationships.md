@@ -80,6 +80,12 @@ class PostAuthorResolver : PostResolvers.Author() {
 }
 ```
 
+**Important:** The target type (User in this example) **must implement the `Node` interface** for `ctx.nodeFor()` to work. If your target type doesn't implement Node:
+
+1. Add `implements Node` to the type in your schema
+2. Ensure the type has an `id: ID!` field
+3. Update any existing resolvers that build this type to use `ctx.globalIDFor()` for the id field (the generated `Builder.id()` method will expect `GlobalID<T>` instead of `String`)
+
 ### Benefits of Node References
 
 1. **Batching**: Multiple node references are batched together
