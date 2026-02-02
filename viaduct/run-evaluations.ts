@@ -1,20 +1,34 @@
 /**
  * Viaduct Skill Evaluation Harness
  *
- * Runs evaluations against the viaduct skill using the Claude Agent SDK.
+ * Runs evaluations against the viaduct skill using a real project.
+ * Each evaluation:
+ *   1. Clones viaduct-batteries-included to a temp directory
+ *   2. Checks out the baseline commit (before validation features)
+ *   3. Runs Claude with the skill to implement the feature
+ *   4. Runs ./gradlew build to verify compilation
+ *   5. Reports pass/fail
  *
  * Usage:
  *   npx tsx run-evaluations.ts [eval-id]
  *
  * Requirements:
  *   - npm install @anthropic-ai/claude-agent-sdk
- *   - ANTHROPIC_API_KEY environment variable set
+ *   - ANTHROPIC_API_KEY environment variable
  *   - Claude Code installed
+ *   - Java 17+ and Gradle
+ *   - Git
  */
 
 import { query, ClaudeAgentOptions } from "@anthropic-ai/claude-agent-sdk";
-import { readFileSync, writeFileSync, mkdirSync } from "fs";
+import { readFileSync, writeFileSync, mkdirSync, rmSync, existsSync, cpSync } from "fs";
 import { join } from "path";
+import { execSync, spawn } from "child_process";
+
+// Configuration
+const REPO_URL = "git@github.com:viaduct-dev/viaduct-batteries-included.git";
+const BASELINE_COMMIT = "a20f9be"; // Before validation features were added
+const SKILL_DIR = join(__dirname, ".."); // Parent of this file (the skill root)
 
 interface Evaluation {
   id: string;
@@ -23,6 +37,9 @@ interface Evaluation {
   query: string;
   files: string[];
   expected_behavior: string[];
+  // Additional fields for real evaluation
+  setup_query?: string; // Optional setup before main query
+  verify_patterns?: string[]; // Patterns to grep for in generated code
 }
 
 interface EvalResult {
@@ -30,95 +47,163 @@ interface EvalResult {
   name: string;
   query: string;
   passed: boolean;
-  behaviors_found: string[];
-  behaviors_missing: string[];
-  output: string;
+  build_success: boolean;
+  patterns_found: string[];
+  patterns_missing: string[];
+  claude_output: string;
+  build_output: string;
   error?: string;
+  duration_ms: number;
 }
 
-async function runEvaluation(
-  eval_: Evaluation,
-  workingDir: string
-): Promise<EvalResult> {
+function runCommand(cmd: string, cwd: string, timeout = 300000): { success: boolean; output: string } {
+  try {
+    const output = execSync(cmd, {
+      cwd,
+      encoding: "utf-8",
+      timeout,
+      stdio: ["pipe", "pipe", "pipe"],
+    });
+    return { success: true, output };
+  } catch (error: any) {
+    return {
+      success: false,
+      output: error.stdout?.toString() || "" + "\n" + error.stderr?.toString() || "",
+    };
+  }
+}
+
+async function runClaude(prompt: string, workDir: string): Promise<string> {
+  const outputs: string[] = [];
+
+  try {
+    for await (const message of query({
+      prompt,
+      options: {
+        // Load the viaduct skill
+        skillPaths: [SKILL_DIR],
+        // Allow all code tools
+        allowedTools: ["Read", "Glob", "Grep", "Write", "Edit", "Bash"],
+        // Auto-accept edits for automation
+        permissionMode: "acceptEdits",
+        // Set working directory to the cloned repo
+        cwd: workDir,
+        // Limit turns to prevent runaway
+        maxTurns: 50,
+      } as ClaudeAgentOptions,
+    })) {
+      // Capture all output types
+      if ("result" in message) {
+        outputs.push(String(message.result));
+      }
+      if ("content" in message) {
+        if (typeof message.content === "string") {
+          outputs.push(message.content);
+        } else if (Array.isArray(message.content)) {
+          for (const block of message.content) {
+            if (typeof block === "string") {
+              outputs.push(block);
+            } else if ("text" in block) {
+              outputs.push(block.text);
+            }
+          }
+        }
+      }
+    }
+  } catch (error) {
+    outputs.push(`Error: ${error}`);
+  }
+
+  return outputs.join("\n");
+}
+
+async function runEvaluation(eval_: Evaluation, baseDir: string): Promise<EvalResult> {
+  const startTime = Date.now();
+  const workDir = join(baseDir, eval_.id);
+
   const result: EvalResult = {
     id: eval_.id,
     name: eval_.name,
     query: eval_.query,
     passed: false,
-    behaviors_found: [],
-    behaviors_missing: [],
-    output: "",
+    build_success: false,
+    patterns_found: [],
+    patterns_missing: [],
+    claude_output: "",
+    build_output: "",
+    duration_ms: 0,
   };
 
   try {
-    // Collect all output from the agent
-    const outputs: string[] = [];
+    // Clean up any previous run
+    if (existsSync(workDir)) {
+      rmSync(workDir, { recursive: true, force: true });
+    }
 
-    for await (const message of query({
-      prompt: eval_.query,
-      options: {
-        // Load skills from project directory
-        settingSources: ["project"],
-        // Allow code generation tools but not execution for safety
-        allowedTools: ["Read", "Glob", "Grep", "Write", "Edit"],
-        // Run without interactive prompts
-        permissionMode: "acceptEdits",
-        // Set working directory
-        cwd: workingDir,
-      } as ClaudeAgentOptions,
-    })) {
-      // Capture text output and tool results
-      if ("result" in message) {
-        outputs.push(String(message.result));
-      }
-      if ("content" in message && typeof message.content === "string") {
-        outputs.push(message.content);
+    console.log("  Cloning repository...");
+    const cloneResult = runCommand(`git clone ${REPO_URL} ${eval_.id}`, baseDir);
+    if (!cloneResult.success) {
+      throw new Error(`Clone failed: ${cloneResult.output}`);
+    }
+
+    console.log(`  Checking out baseline (${BASELINE_COMMIT})...`);
+    const checkoutResult = runCommand(`git checkout ${BASELINE_COMMIT}`, workDir);
+    if (!checkoutResult.success) {
+      throw new Error(`Checkout failed: ${checkoutResult.output}`);
+    }
+
+    // Copy the skill into the project's .claude/skills directory
+    const skillDestDir = join(workDir, ".claude", "skills", "viaduct");
+    mkdirSync(skillDestDir, { recursive: true });
+    cpSync(SKILL_DIR, skillDestDir, { recursive: true });
+
+    // Run setup query if provided
+    if (eval_.setup_query) {
+      console.log("  Running setup...");
+      await runClaude(eval_.setup_query, workDir);
+    }
+
+    // Run main evaluation query
+    console.log("  Running Claude with skill...");
+    result.claude_output = await runClaude(eval_.query, workDir);
+
+    // Run gradle build
+    console.log("  Running gradle build...");
+    const buildResult = runCommand(
+      "./gradlew :backend:classes --no-daemon -q",
+      workDir,
+      600000 // 10 minute timeout for build
+    );
+    result.build_output = buildResult.output;
+    result.build_success = buildResult.success;
+
+    // Check for expected patterns in generated code
+    if (eval_.verify_patterns && eval_.verify_patterns.length > 0) {
+      const backendSrc = join(workDir, "backend", "src");
+      for (const pattern of eval_.verify_patterns) {
+        const grepResult = runCommand(`grep -r "${pattern}" . || true`, backendSrc);
+        if (grepResult.output.trim()) {
+          result.patterns_found.push(pattern);
+        } else {
+          result.patterns_missing.push(pattern);
+        }
       }
     }
 
-    result.output = outputs.join("\n");
+    // Determine pass/fail
+    result.passed = result.build_success && result.patterns_missing.length === 0;
 
-    // Check each expected behavior against the output
-    for (const behavior of eval_.expected_behavior) {
-      // Simple heuristic: check if key terms from behavior appear in output
-      const keyTerms = extractKeyTerms(behavior);
-      const found = keyTerms.every((term) =>
-        result.output.toLowerCase().includes(term.toLowerCase())
-      );
-
-      if (found) {
-        result.behaviors_found.push(behavior);
-      } else {
-        result.behaviors_missing.push(behavior);
-      }
-    }
-
-    // Pass if majority of behaviors found
-    result.passed =
-      result.behaviors_found.length > result.behaviors_missing.length;
   } catch (error) {
     result.error = String(error);
   }
 
+  result.duration_ms = Date.now() - startTime;
   return result;
-}
-
-function extractKeyTerms(behavior: string): string[] {
-  // Extract code-like terms (PascalCase, camelCase, snake_case, @decorators)
-  const codeTerms =
-    behavior.match(
-      /@?\b[A-Z][a-zA-Z]+(?:\.[A-Z][a-zA-Z]+)*\b|\b[a-z]+[A-Z][a-zA-Z]*\b|\b[a-z]+_[a-z_]+\b|ctx\.[a-zA-Z]+/g
-    ) || [];
-
-  // Also extract quoted terms
-  const quotedTerms = behavior.match(/'[^']+'/g)?.map((t) => t.slice(1, -1)) || [];
-
-  return [...codeTerms, ...quotedTerms].filter((t) => t.length > 2);
 }
 
 async function main() {
   const args = process.argv.slice(2);
-  const evalFilter = args[0]; // Optional: run specific evaluation
+  const evalFilter = args[0];
 
   // Load evaluations
   const evalPath = join(__dirname, "evaluations.json");
@@ -126,45 +211,58 @@ async function main() {
 
   // Filter if specified
   const toRun = evalFilter
-    ? evaluations.filter((e) => e.id === evalFilter || e.name.includes(evalFilter))
+    ? evaluations.filter((e) => e.id === evalFilter || e.name.toLowerCase().includes(evalFilter.toLowerCase()))
     : evaluations;
 
   if (toRun.length === 0) {
     console.error(`No evaluations found matching: ${evalFilter}`);
+    console.error(`Available: ${evaluations.map((e) => e.id).join(", ")}`);
     process.exit(1);
   }
 
-  console.log(`Running ${toRun.length} evaluation(s)...\n`);
+  console.log("Viaduct Skill Evaluation Harness");
+  console.log("================================");
+  console.log(`Repository: ${REPO_URL}`);
+  console.log(`Baseline: ${BASELINE_COMMIT}`);
+  console.log(`Skill: ${SKILL_DIR}`);
+  console.log(`Running ${toRun.length} evaluation(s)`);
+  console.log("");
 
-  // Create temp working directory for evaluation
-  const workDir = join(__dirname, ".eval-workspace");
-  mkdirSync(workDir, { recursive: true });
+  // Create base directory for all evaluations
+  const baseDir = join(__dirname, ".eval-workspace");
+  mkdirSync(baseDir, { recursive: true });
 
   const results: EvalResult[] = [];
 
   for (const eval_ of toRun) {
     console.log(`\n${"=".repeat(60)}`);
-    console.log(`Running: ${eval_.id} - ${eval_.name}`);
-    console.log(`Query: ${eval_.query.slice(0, 100)}...`);
-    console.log("=".repeat(60));
+    console.log(`${eval_.id}: ${eval_.name}`);
+    console.log(`${"=".repeat(60)}`);
+    console.log(`Query: ${eval_.query.slice(0, 80)}...`);
 
-    const result = await runEvaluation(eval_, workDir);
+    const result = await runEvaluation(eval_, baseDir);
     results.push(result);
 
-    // Print result summary
+    // Print result
     const status = result.passed ? "✅ PASSED" : "❌ FAILED";
-    console.log(`\nResult: ${status}`);
-    console.log(`  Behaviors found: ${result.behaviors_found.length}/${eval_.expected_behavior.length}`);
+    console.log(`\nResult: ${status} (${(result.duration_ms / 1000).toFixed(1)}s)`);
+    console.log(`  Build: ${result.build_success ? "✅" : "❌"}`);
 
-    if (result.behaviors_missing.length > 0) {
-      console.log(`  Missing:`);
-      for (const b of result.behaviors_missing) {
-        console.log(`    - ${b}`);
+    if (result.patterns_found.length > 0) {
+      console.log(`  Patterns found: ${result.patterns_found.length}`);
+    }
+    if (result.patterns_missing.length > 0) {
+      console.log(`  Patterns missing:`);
+      for (const p of result.patterns_missing) {
+        console.log(`    - ${p}`);
       }
     }
-
     if (result.error) {
       console.log(`  Error: ${result.error}`);
+    }
+    if (!result.build_success) {
+      console.log(`  Build output (last 500 chars):`);
+      console.log(`    ${result.build_output.slice(-500).replace(/\n/g, "\n    ")}`);
     }
   }
 
@@ -174,19 +272,36 @@ async function main() {
   console.log("=".repeat(60));
 
   const passed = results.filter((r) => r.passed).length;
-  console.log(`Passed: ${passed}/${results.length}`);
+  const buildPassed = results.filter((r) => r.build_success).length;
+
+  console.log(`Overall: ${passed}/${results.length} passed`);
+  console.log(`Builds: ${buildPassed}/${results.length} successful`);
+  console.log("");
 
   for (const r of results) {
     const icon = r.passed ? "✅" : "❌";
-    console.log(`  ${icon} ${r.id}: ${r.name}`);
+    const buildIcon = r.build_success ? "🔨" : "💔";
+    console.log(`  ${icon} ${buildIcon} ${r.id}: ${r.name} (${(r.duration_ms / 1000).toFixed(1)}s)`);
   }
 
   // Save detailed results
   const resultsPath = join(__dirname, "evaluation-results.json");
   writeFileSync(resultsPath, JSON.stringify(results, null, 2));
-  console.log(`\nDetailed results saved to: ${resultsPath}`);
+  console.log(`\nDetailed results: ${resultsPath}`);
+
+  // Save individual outputs for debugging
+  const outputsDir = join(__dirname, ".eval-outputs");
+  mkdirSync(outputsDir, { recursive: true });
+  for (const r of results) {
+    writeFileSync(join(outputsDir, `${r.id}-claude.txt`), r.claude_output);
+    writeFileSync(join(outputsDir, `${r.id}-build.txt`), r.build_output);
+  }
+  console.log(`Individual outputs: ${outputsDir}/`);
 
   process.exit(passed === results.length ? 0 : 1);
 }
 
-main().catch(console.error);
+main().catch((err) => {
+  console.error("Fatal error:", err);
+  process.exit(1);
+});
