@@ -118,10 +118,10 @@ run_evaluation() {
         echo -e "  ${RED}Claude execution failed${NC}"
     fi
 
-    # Run gradle build
+    # Run gradle build (gradlew is in backend/)
     echo "  Running gradle build..."
     local build_success=0
-    if (cd "$work_dir" && ./gradlew :backend:classes --no-daemon -q > "$build_output" 2>&1); then
+    if (cd "$work_dir/backend" && ./gradlew classes --no-daemon -q > "$build_output" 2>&1); then
         build_success=1
         echo -e "  ${GREEN}Build: PASSED${NC}"
     else
