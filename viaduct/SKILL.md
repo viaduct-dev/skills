@@ -1,14 +1,6 @@
 ---
 name: viaduct
-description: |
-  Viaduct GraphQL framework development guide. Auto-triggers when:
-  - Working with .graphqls schema files
-  - Implementing NodeResolvers, FieldResolvers, QueryResolvers, MutationResolvers
-  - Using @resolver, @scope, @idOf directives
-  - Handling GlobalID, GlobalID<T>, or .internalID patterns
-  - Creating CheckerExecutor, CheckerExecutorFactory, or policy directives
-  - Working with viaduct.api, viaduct.tenant, or viaduct.engine packages
-  - Troubleshooting Viaduct build or runtime errors
+description: Viaduct GraphQL framework development guide for building type-safe Kotlin APIs. Use when working with .graphqls schema files, implementing NodeResolvers, FieldResolvers, QueryResolvers, or MutationResolvers, using @resolver/@scope/@idOf directives, handling GlobalID patterns with .internalID, or troubleshooting Viaduct build errors.
 ---
 
 # Viaduct Application Development Guide
@@ -23,7 +15,6 @@ You are an expert Viaduct developer. Use this documentation to build GraphQL API
 | Add a query field | [Queries](resources/core/queries.md) | Use `@resolver` directive, implement Field Resolver |
 | Add a mutation | [Mutations](resources/core/mutations.md) | Extend `Mutation` type, use `@resolver` |
 | Handle GlobalIDs | [GlobalID Guide](resources/gotchas/global-ids.md) | Use `@idOf` on inputs, `.internalID` in resolvers |
-| Add authorization | [Policy Checkers](resources/gotchas/policy-checkers.md) | Create directive, executor, factory |
 | Entity relationships | [Relationships](resources/core/relationships.md) | Node references, subqueries |
 | Optimize N+1 queries | [Queries](resources/core/queries.md) | Use `batchResolve` |
 
@@ -185,7 +176,6 @@ See [GlobalID Guide](resources/gotchas/global-ids.md) for complete patterns.
 
 ### Known Gotchas
 - [GlobalID Handling](resources/gotchas/global-ids.md) - Common GlobalID mistakes and fixes
-- [Policy Checkers](resources/gotchas/policy-checkers.md) - Authorization directive implementation
 
 ### Reference
 - [Troubleshooting](resources/reference/troubleshooting.md) - Common errors and solutions
@@ -195,8 +185,7 @@ See [GlobalID Guide](resources/gotchas/global-ids.md) for complete patterns.
 1. **Define Schema** - Create `.graphqls` files with types, queries, mutations
 2. **Generate Code** - Run `./gradlew generateViaduct...` to create base classes
 3. **Implement Resolvers** - Subclass generated base classes
-4. **Register Factories** - Add policy factories in `configureSchema()`
-5. **Test** - Write integration tests for your resolvers
+4. **Test** - Write integration tests for your resolvers
 
 ## Scopes
 
@@ -221,5 +210,3 @@ type PublicInfo @scope(to: ["public"]) { ... }
 2. **Implement `batchResolve`** when fetching from external services
 3. **Don't set `@resolver` fields** in node resolvers (they have their own resolvers)
 4. **Use `ctx.globalIDFor()`** when building response objects
-5. **Register policy factories** in `configureSchema()` method
-6. **Handle both GlobalID and String** in policy executors (they run before deserialization)
