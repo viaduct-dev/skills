@@ -106,12 +106,11 @@ run_evaluation() {
     mkdir -p "$work_dir/.claude/skills/viaduct"
     rsync -a --exclude='.eval-workspace' --exclude='.eval-outputs' --exclude='node_modules' --exclude='eval-kotlin/build' --exclude='eval-kotlin/.gradle' "$SKILL_DIR/" "$work_dir/.claude/skills/viaduct/"
 
-    # Run Claude
+    # Run Claude (without --print so it actually makes changes)
     echo "  Running Claude with skill..."
     echo "  Query: ${eval_query:0:60}..."
 
-    if ! claude --print \
-               --dangerously-skip-permissions \
+    if ! claude --dangerously-skip-permissions \
                --allowedTools "Read,Glob,Grep,Write,Edit,Bash" \
                -p "$eval_query" \
                "$work_dir" > "$claude_output" 2>&1; then
