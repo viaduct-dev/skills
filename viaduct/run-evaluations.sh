@@ -64,11 +64,6 @@ check_deps() {
         missing=1
     fi
 
-    if [[ -z "$ANTHROPIC_API_KEY" ]]; then
-        echo -e "${RED}Error: ANTHROPIC_API_KEY environment variable not set.${NC}"
-        missing=1
-    fi
-
     if [[ $missing -eq 1 ]]; then
         exit 1
     fi

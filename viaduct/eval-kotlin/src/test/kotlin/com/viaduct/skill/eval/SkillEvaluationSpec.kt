@@ -26,10 +26,6 @@ class SkillEvaluationSpec : FunSpec({
 
     // Check prerequisites
     beforeSpec {
-        require(System.getenv("ANTHROPIC_API_KEY") != null) {
-            "ANTHROPIC_API_KEY environment variable must be set"
-        }
-
         // Verify claude CLI is available
         val claudeCheck = ProcessBuilder("which", "claude")
             .start()
