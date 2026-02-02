@@ -23,9 +23,9 @@
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-SKILL_DIR="$(dirname "$SCRIPT_DIR")/viaduct"  # The skill directory
+SKILL_DIR="$SCRIPT_DIR"  # The skill directory (where this script lives)
 EVAL_FILE="$SCRIPT_DIR/evaluations.json"
-WORKSPACE_DIR="$SCRIPT_DIR/.eval-workspace"
+WORKSPACE_DIR="/tmp/viaduct-skill-eval"  # Use /tmp to avoid recursive copy
 OUTPUT_DIR="$SCRIPT_DIR/.eval-outputs"
 
 REPO_URL="git@github.com:viaduct-dev/viaduct-batteries-included.git"
@@ -101,10 +101,10 @@ run_evaluation() {
         return 1
     fi
 
-    # Copy skill into project
+    # Copy skill into project (excluding workspace/output dirs)
     echo "  Installing skill..."
-    mkdir -p "$work_dir/.claude/skills"
-    cp -r "$SCRIPT_DIR" "$work_dir/.claude/skills/viaduct"
+    mkdir -p "$work_dir/.claude/skills/viaduct"
+    rsync -a --exclude='.eval-workspace' --exclude='.eval-outputs' --exclude='node_modules' --exclude='eval-kotlin/build' --exclude='eval-kotlin/.gradle' "$SKILL_DIR/" "$work_dir/.claude/skills/viaduct/"
 
     # Run Claude
     echo "  Running Claude with skill..."
