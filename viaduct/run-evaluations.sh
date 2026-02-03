@@ -106,11 +106,24 @@ run_evaluation() {
     mkdir -p "$work_dir/.claude/skills/viaduct"
     rsync -a --exclude='.eval-workspace' --exclude='.eval-outputs' --exclude='node_modules' --exclude='eval-kotlin/build' --exclude='eval-kotlin/.gradle' "$SKILL_DIR/" "$work_dir/.claude/skills/viaduct/"
 
-    # Run Claude in non-interactive mode with allowed tools
+    # Get IAP auth token for internal gateway
+    echo "  Getting IAP auth token..."
+    local auth_token
+    auth_token=$(iap-auth https://devaigateway.a.musta.ch 2>/dev/null)
+    if [[ -z "$auth_token" ]]; then
+        echo -e "  ${RED}Failed to get IAP auth token${NC}"
+        return 1
+    fi
+
+    # Run Claude in non-interactive mode with internal gateway
     echo "  Running Claude with skill..."
     echo "  Query: ${eval_query:0:60}..."
 
-    if ! claude -p "$eval_query" \
+    if ! CLAUDE_CODE_USE_BEDROCK=1 \
+         ANTHROPIC_BEDROCK_BASE_URL="https://devaigateway.a.musta.ch/bedrock" \
+         CLAUDE_CODE_SKIP_BEDROCK_AUTH=1 \
+         ANTHROPIC_AUTH_TOKEN="$auth_token" \
+         claude -p "$eval_query" \
                --allowedTools "Read,Glob,Grep,Write,Edit,Bash" \
                --no-session-persistence \
                --permission-mode "acceptEdits" \
