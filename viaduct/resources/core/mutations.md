@@ -40,7 +40,7 @@ input UpdateUserInput @scope(to: ["default"]) {
 }
 ```
 
-**Critical**: Always use `@idOf` on ID fields in input types.
+**Critical**: Always use `@idOf` on ID fields in input types. See [GlobalID Guide](../gotchas/global-ids.md) for complete patterns.
 
 ## Mutation Resolver Implementation
 

@@ -27,7 +27,7 @@ extend type Query @scope(to: ["default"]) {
 }
 ```
 
-**Critical**: Always use `@idOf` on ID arguments to get proper GlobalID deserialization.
+**Critical**: Always use `@idOf` on ID arguments to get proper GlobalID deserialization. See [GlobalID Guide](../gotchas/global-ids.md) for complete patterns.
 
 ## Query Resolver Implementation
 

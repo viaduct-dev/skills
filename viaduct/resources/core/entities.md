@@ -4,22 +4,47 @@
 
 Viaduct uses two resolver types to build GraphQL APIs: **Node Resolvers** fetch objects by ID, and **Field Resolvers** compute individual fields. Understanding their responsibilities is key to building efficient APIs.
 
+**Schema First**: Always create/update `.graphqls` schema files BEFORE writing Kotlin resolver code. The schema generates base classes that your resolvers extend. Writing resolvers before schema causes `Unresolved reference` errors.
+
 ## Navigation
 
-- Prerequisites: [Main Guide](../../viaduct.md)
+- Prerequisites: [Main Guide](../../SKILL.md)
 - Related: [Queries](queries.md), [GlobalIDs](../gotchas/global-ids.md)
 - Next Steps: [Mutations](mutations.md), [Relationships](relationships.md)
 
 ## Node Types
 
-Any type implementing the `Node` interface is resolvable by GlobalID. Add `@resolver` to the type to generate `NodeResolvers.TypeName`:
+Types can implement the `Node` interface in two ways:
+
+### Option 1: Node Type WITHOUT NodeResolver (Query-only access)
+
+Use this when you only need to fetch the entity via query fields:
 
 ```graphql
-interface Node {
+# NO @resolver on type = NO NodeResolvers.Tag generated
+type Tag implements Node @scope(to: ["default"]) {
   id: ID!
+  name: String!
+  color: String
 }
 
-# @resolver on the type generates NodeResolvers.User
+# Query provides access - generates QueryResolvers.Tag
+extend type Query @scope(to: ["default"]) {
+  tag(id: ID! @idOf(type: "Tag")): Tag @resolver
+}
+```
+
+With this pattern:
+- Only `QueryResolvers.Tag` is generated (for the query field)
+- NO `NodeResolvers.Tag` exists - don't try to extend it!
+- Create `TagQueryResolver extends QueryResolvers.Tag()`
+
+### Option 2: Node Type WITH NodeResolver (GlobalID resolution)
+
+Add `@resolver` to the type itself when you need GlobalID resolution:
+
+```graphql
+# @resolver on type = NodeResolvers.User IS generated
 type User implements Node @resolver @scope(to: ["default"]) {
   id: ID!
   firstName: String
@@ -28,6 +53,22 @@ type User implements Node @resolver @scope(to: ["default"]) {
   displayName: String @resolver  # Computed field
 }
 ```
+
+With this pattern:
+- `NodeResolvers.User` IS generated
+- Create `UserNodeResolver extends NodeResolvers.User()`
+- The User can be resolved via GlobalID from any context
+
+### When to Use Each Pattern
+
+| Use Case | Pattern | @resolver on type? |
+|----------|---------|-------------------|
+| Simple entity fetched only via queries | Option 1 | NO |
+| Entity referenced from other types | Option 2 | YES |
+| Entity needs GlobalID resolution | Option 2 | YES |
+| Entity is a relationship target | Option 2 | YES |
+
+**Important:** If you get `Unresolved reference 'NodeResolvers.TypeName'`, check if the type has `@resolver` directive. Without it, no NodeResolver is generated.
 
 ## Node Resolvers
 
@@ -46,6 +87,12 @@ object NodeResolvers {
 ```
 
 ### Implementation
+
+**Important:** Check existing resolvers in the project for the correct import path. The resolver bases package varies by project. Look for patterns like:
+```kotlin
+import com.example.resolvers.resolverbases.NodeResolvers
+import com.example.resolvers.resolverbases.QueryResolvers
+```
 
 ```kotlin
 @Resolver

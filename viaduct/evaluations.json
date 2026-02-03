@@ -34,7 +34,7 @@
     ],
     "verify_patterns": [
       "type Tag implements Node",
-      "@idOf(type: \"Tag\")",
+      "@idOf\\(type: \"Tag\"\\)",
       "QueryResolvers.Tag",
       "internalID"
     ]
@@ -96,7 +96,7 @@
     "verify_patterns": [
       "CreateTagInput",
       "UpdateTagInput",
-      "@idOf(type: \"Tag\")",
+      "@idOf\\(type: \"Tag\"\\)",
       "MutationResolvers",
       "internalID",
       "globalIDFor"
@@ -115,7 +115,7 @@
       "Field resolver for usageCount extends TagResolvers.UsageCount"
     ],
     "verify_patterns": [
-      "@scope(to: \\[\"admin\"\\])",
+      "@scope\\(to: \\[\"admin\"\\]\\)",
       "extend type Tag",
       "deleteAllTags",
       "TagResolvers.UsageCount"

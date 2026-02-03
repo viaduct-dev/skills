@@ -12,6 +12,7 @@
 #
 # Usage:
 #   ./run-evaluations.sh [eval-id]
+#   MAX_RETRIES=3 ./run-evaluations.sh        # Set max retry attempts
 #
 # Requirements:
 #   - Claude Code CLI installed
@@ -31,6 +32,9 @@ OUTPUT_DIR="$SCRIPT_DIR/.eval-outputs"
 REPO_URL="git@github.com:viaduct-dev/viaduct-batteries-included.git"
 BASELINE_BRANCH="render-template"  # Clean baseline branch for evaluations
 REPO_DIR="$WORKSPACE_DIR/repo"  # Single cloned repo, reused across evaluations
+
+# Retry configuration (can be overridden via environment)
+MAX_RETRIES="${MAX_RETRIES:-3}"
 
 # Colors for output
 RED='\033[0;31m'
@@ -133,11 +137,15 @@ run_evaluation() {
         return 1
     fi
 
-    # Run Claude in non-interactive mode with internal gateway
-    echo "  Running Claude with skill..."
+    # Set Supabase env vars from mise.toml defaults
+    export SUPABASE_URL="http://127.0.0.1:54321"
+    export SUPABASE_ANON_KEY="sb_publishable_ACJWlzQHlZjBrEguHvfOxg_3BJgxAaH"
+    export SUPABASE_SERVICE_ROLE_KEY="sb_secret_N7UND0UgjKTVK-Uodkm0Hg_xSvEMPvz"
+
+    # Initial Claude run
+    echo "  Running Claude with skill (attempt 1/$MAX_RETRIES)..."
     echo "  Query: ${eval_query:0:60}..."
 
-    # Prepend instruction to work only in this workspace
     local full_query="IMPORTANT: Work ONLY in the current directory ($work_dir). Do NOT search or reference any other directories. Implement the following in this workspace:
 
 $eval_query"
@@ -153,21 +161,54 @@ $eval_query"
         echo -e "  ${RED}Claude execution failed${NC}"
     fi
 
-    # Run gradle build (gradlew is in backend/)
-    # Set Supabase env vars from mise.toml defaults
-    echo "  Running gradle build..."
+    # Build and fix loop - let Claude iterate on failures
     local build_success=0
-    export SUPABASE_URL="http://127.0.0.1:54321"
-    export SUPABASE_ANON_KEY="sb_publishable_ACJWlzQHlZjBrEguHvfOxg_3BJgxAaH"
-    export SUPABASE_SERVICE_ROLE_KEY="sb_secret_N7UND0UgjKTVK-Uodkm0Hg_xSvEMPvz"
-    if (cd "$work_dir/backend" && ./gradlew classes --no-daemon -q > "$build_output" 2>&1); then
-        build_success=1
-        echo -e "  ${GREEN}Build: PASSED${NC}"
-    else
-        echo -e "  ${RED}Build: FAILED${NC}"
-        echo "  Last 10 lines of build output:"
-        tail -10 "$build_output" | sed 's/^/    /'
-    fi
+    local attempt=1
+
+    while [[ $attempt -le $MAX_RETRIES ]]; do
+        echo "  Running gradle build (attempt $attempt/$MAX_RETRIES)..."
+
+        if (cd "$work_dir/backend" && ./gradlew classes --no-daemon -q > "$build_output" 2>&1); then
+            build_success=1
+            echo -e "  ${GREEN}Build: PASSED${NC}"
+            break
+        else
+            echo -e "  ${RED}Build: FAILED${NC}"
+
+            if [[ $attempt -lt $MAX_RETRIES ]]; then
+                echo "  Letting Claude fix the build error..."
+
+                # Get build error for Claude to fix
+                local build_error
+                build_error=$(tail -50 "$build_output")
+
+                local fix_query="The gradle build failed with the following error. Please fix it:
+
+\`\`\`
+$build_error
+\`\`\`
+
+Work ONLY in $work_dir. Fix the build error."
+
+                # Run Claude to fix the error (continue in same session would be ideal, but we use a new prompt)
+                if ! CLAUDE_CODE_USE_BEDROCK=1 \
+                     ANTHROPIC_BEDROCK_BASE_URL="https://devaigateway.a.musta.ch/bedrock" \
+                     CLAUDE_CODE_SKIP_BEDROCK_AUTH=1 \
+                     ANTHROPIC_AUTH_TOKEN="$auth_token" \
+                     claude -p "$fix_query" \
+                           --dangerously-skip-permissions \
+                           --no-session-persistence \
+                           "$work_dir" >> "$claude_output" 2>&1; then
+                    echo -e "  ${RED}Claude fix attempt failed${NC}"
+                fi
+            else
+                echo "  Last 10 lines of build output:"
+                tail -10 "$build_output" | sed 's/^/    /'
+            fi
+        fi
+
+        ((attempt++))
+    done
 
     # Check patterns
     local patterns_found=0
@@ -199,7 +240,7 @@ $eval_query"
     (cd "$work_dir" && git reset --hard "origin/$BASELINE_BRANCH" --quiet 2>/dev/null && git clean -fd --quiet 2>/dev/null)
 
     if [[ $passed -eq 1 ]]; then
-        echo -e "\n  ${GREEN}✅ PASSED${NC}"
+        echo -e "\n  ${GREEN}✅ PASSED${NC} (build succeeded on attempt $attempt)"
         return 0
     else
         echo -e "\n  ${RED}❌ FAILED${NC}"
@@ -215,6 +256,7 @@ main() {
     echo "Repository: $REPO_URL"
     echo "Baseline: $BASELINE_BRANCH"
     echo "Skill: $SCRIPT_DIR"
+    echo "Max retries: $MAX_RETRIES (set MAX_RETRIES=N to change)"
     echo ""
 
     check_deps

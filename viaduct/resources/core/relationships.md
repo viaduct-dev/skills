@@ -62,6 +62,8 @@ type Group implements Node {
 
 ## Node References
 
+**⚠️ WARNING: If modifying an existing type to add `implements Node`, you MUST update ALL existing resolvers that build that type to use `ctx.globalIDFor()` for the id field. Search for `TypeName.Builder` to find all places that need updating.**
+
 When a field returns a Node type, you can return a **node reference** - Viaduct will automatically call the appropriate Node Resolver:
 
 ```kotlin
@@ -80,11 +82,35 @@ class PostAuthorResolver : PostResolvers.Author() {
 }
 ```
 
-**Important:** The target type (User in this example) **must implement the `Node` interface** for `ctx.nodeFor()` to work. If your target type doesn't implement Node:
+**Important:** For `ctx.nodeFor()` to work, the target type must:
 
-1. Add `implements Node` to the type in your schema
-2. Ensure the type has an `id: ID!` field
-3. Update any existing resolvers that build this type to use `ctx.globalIDFor()` for the id field (the generated `Builder.id()` method will expect `GlobalID<T>` instead of `String`)
+1. **Implement `Node`** - Add `implements Node` to the type
+2. **Have `@resolver`** - The type must have `@resolver` to generate `NodeResolvers.TypeName` base class
+3. **Have a NodeResolver** - You must create a resolver extending `NodeResolvers.TypeName()`
+
+**If modifying an existing type to support nodeFor:**
+
+1. Add `implements Node @resolver` to the type definition
+2. Create a NodeResolver class (e.g., `UserNodeResolver extends NodeResolvers.User()`)
+3. **CRITICAL**: Update **ALL** existing resolvers that build this type to use `ctx.globalIDFor(TypeName.Reflection, id)` for the id field
+
+**Example of required changes when adding `implements Node` to an existing type:**
+
+```kotlin
+// BEFORE: When User does NOT implement Node
+return User.Builder(ctx)
+    .id(userId)  // Accepts String
+    .email(email)
+    .build()
+
+// AFTER: When User implements Node
+return User.Builder(ctx)
+    .id(ctx.globalIDFor(User.Reflection, userId))  // Must be GlobalID<User>
+    .email(email)
+    .build()
+```
+
+**Find and update ALL resolvers** that create this type (search for `TypeName.Builder`).
 
 ### Benefits of Node References
 
@@ -140,6 +166,73 @@ class OrderCustomerDetailsResolver @Inject constructor(
                 .memberSince(customer["memberSince"] as String)
                 .build()
         }
+    }
+}
+```
+
+## Complete Example: Adding a createdBy Relationship
+
+This is the most common relationship pattern - adding a reference to another entity.
+
+### Step 1: Update Schema (ALWAYS FIRST)
+
+```graphql
+# Tag.graphqls
+type Tag implements Node @scope(to: ["default"]) {
+  id: ID!
+  name: String!
+  color: String
+
+  # Store the raw ID for reference
+  createdById: String!
+
+  # Relationship field - resolved separately
+  createdBy: User @resolver
+}
+```
+
+**Important:**
+- `createdById: String!` stores the raw UUID (for display/filtering)
+- `createdBy: User @resolver` is the relationship field that returns the User object
+- The User type MUST implement `Node` for `ctx.nodeFor()` to work
+
+### Step 2: Implement Field Resolver
+
+```kotlin
+@Resolver("fragment _ on Tag { createdById }")
+class TagCreatedByResolver : TagResolvers.CreatedBy() {
+
+    override suspend fun resolve(ctx: Context): User? {
+        val createdById = ctx.objectValue.getCreatedById()
+            ?: return null
+
+        // Return node reference - Viaduct calls UserNodeResolver
+        return ctx.nodeFor(
+            ctx.globalIDFor(User.Reflection, createdById)
+        )
+    }
+}
+```
+
+### Step 3: Update Node Resolver (if needed)
+
+The Tag Node Resolver should set `createdById` but NOT `createdBy`:
+
+```kotlin
+@Resolver
+class TagNodeResolver @Inject constructor(
+    private val tagService: TagServiceClient
+) : NodeResolvers.Tag() {
+
+    override suspend fun resolve(ctx: Context): Tag {
+        val data = tagService.fetch(ctx.id.internalID)
+
+        return Tag.Builder(ctx)
+            .name(data.name)
+            .color(data.color)
+            .createdById(data.createdById)  // Set the raw ID
+            // DO NOT set createdBy - it has @resolver
+            .build()
     }
 }
 ```

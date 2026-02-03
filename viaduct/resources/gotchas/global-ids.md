@@ -1,4 +1,8 @@
-# GlobalID Handling Gotchas
+# GlobalID Handling Guide
+
+## Overview
+
+This guide explains Viaduct's GlobalID system in depth. For quick reference on `@idOf` usage, see the callouts in [Queries](../core/queries.md) and [Mutations](../core/mutations.md).
 
 ## The Problem
 
