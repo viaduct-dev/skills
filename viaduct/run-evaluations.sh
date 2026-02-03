@@ -29,7 +29,7 @@ WORKSPACE_DIR="/tmp/viaduct-skill-eval"  # Use /tmp to avoid recursive copy
 OUTPUT_DIR="$SCRIPT_DIR/.eval-outputs"
 
 REPO_URL="git@github.com:viaduct-dev/viaduct-batteries-included.git"
-BASELINE_COMMIT="a20f9be"  # Before validation features were added
+BASELINE_BRANCH="render-template"  # Clean baseline branch for evaluations
 REPO_DIR="$WORKSPACE_DIR/repo"  # Single cloned repo, reused across evaluations
 
 # Colors for output
@@ -78,7 +78,7 @@ ensure_repo_cloned() {
 
     echo "  Cloning repository (first run only)..."
     rm -rf "$REPO_DIR"
-    if ! git clone --quiet "$REPO_URL" "$REPO_DIR" 2>/dev/null; then
+    if ! git clone --quiet -b "$BASELINE_BRANCH" "$REPO_URL" "$REPO_DIR" 2>/dev/null; then
         echo -e "  ${RED}Failed to clone repository${NC}"
         return 1
     fi
@@ -106,8 +106,8 @@ run_evaluation() {
     fi
 
     # Reset to baseline (clean slate for each evaluation)
-    echo "  Resetting to baseline ($BASELINE_COMMIT)..."
-    if ! (cd "$work_dir" && git checkout --quiet "$BASELINE_COMMIT" -- . 2>/dev/null && git clean -fd --quiet 2>/dev/null); then
+    echo "  Resetting to baseline ($BASELINE_BRANCH)..."
+    if ! (cd "$work_dir" && git reset --hard "origin/$BASELINE_BRANCH" --quiet 2>/dev/null && git clean -fd --quiet 2>/dev/null); then
         echo -e "  ${RED}Failed to reset to baseline${NC}"
         return 1
     fi
@@ -192,7 +192,7 @@ run_evaluation() {
 
     # Reset repo to baseline for next run
     echo "  Resetting workspace..."
-    (cd "$work_dir" && git checkout --quiet "$BASELINE_COMMIT" -- . 2>/dev/null && git clean -fd --quiet 2>/dev/null)
+    (cd "$work_dir" && git reset --hard "origin/$BASELINE_BRANCH" --quiet 2>/dev/null && git clean -fd --quiet 2>/dev/null)
 
     if [[ $passed -eq 1 ]]; then
         echo -e "\n  ${GREEN}✅ PASSED${NC}"
@@ -209,7 +209,7 @@ main() {
     echo "Viaduct Skill Evaluation Harness"
     echo "================================"
     echo "Repository: $REPO_URL"
-    echo "Baseline: $BASELINE_COMMIT"
+    echo "Baseline: $BASELINE_BRANCH"
     echo "Skill: $SCRIPT_DIR"
     echo ""
 
