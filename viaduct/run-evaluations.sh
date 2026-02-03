@@ -179,6 +179,10 @@ run_evaluation() {
         passed=1
     fi
 
+    # Clean up cloned repo to prevent nested workspace issues
+    echo "  Cleaning up workspace..."
+    rm -rf "$work_dir"
+
     if [[ $passed -eq 1 ]]; then
         echo -e "\n  ${GREEN}✅ PASSED${NC}"
         return 0
