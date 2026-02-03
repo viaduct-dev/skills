@@ -30,6 +30,7 @@ OUTPUT_DIR="$SCRIPT_DIR/.eval-outputs"
 
 REPO_URL="git@github.com:viaduct-dev/viaduct-batteries-included.git"
 BASELINE_COMMIT="a20f9be"  # Before validation features were added
+REPO_DIR="$WORKSPACE_DIR/repo"  # Single cloned repo, reused across evaluations
 
 # Colors for output
 RED='\033[0;31m'
@@ -69,13 +70,28 @@ check_deps() {
     fi
 }
 
+ensure_repo_cloned() {
+    if [[ -d "$REPO_DIR/.git" ]]; then
+        echo "  Using cached repository..."
+        return 0
+    fi
+
+    echo "  Cloning repository (first run only)..."
+    rm -rf "$REPO_DIR"
+    if ! git clone --quiet "$REPO_URL" "$REPO_DIR" 2>/dev/null; then
+        echo -e "  ${RED}Failed to clone repository${NC}"
+        return 1
+    fi
+    return 0
+}
+
 run_evaluation() {
     local eval_id="$1"
     local eval_name="$2"
     local eval_query="$3"
     local verify_patterns="$4"
 
-    local work_dir="$WORKSPACE_DIR/$eval_id"
+    local work_dir="$REPO_DIR"
     local claude_output="$OUTPUT_DIR/$eval_id-claude.txt"
     local build_output="$OUTPUT_DIR/$eval_id-build.txt"
 
@@ -84,20 +100,15 @@ run_evaluation() {
     echo -e "${YELLOW}$eval_id: $eval_name${NC}"
     echo "============================================================"
 
-    # Clean up previous run
-    rm -rf "$work_dir"
-
-    # Clone repository
-    echo "  Cloning repository..."
-    if ! git clone --quiet "$REPO_URL" "$work_dir" 2>/dev/null; then
-        echo -e "  ${RED}Failed to clone repository${NC}"
+    # Clone repo if not already present
+    if ! ensure_repo_cloned; then
         return 1
     fi
 
-    # Checkout baseline
-    echo "  Checking out baseline ($BASELINE_COMMIT)..."
-    if ! (cd "$work_dir" && git checkout --quiet "$BASELINE_COMMIT" 2>/dev/null); then
-        echo -e "  ${RED}Failed to checkout baseline${NC}"
+    # Reset to baseline (clean slate for each evaluation)
+    echo "  Resetting to baseline ($BASELINE_COMMIT)..."
+    if ! (cd "$work_dir" && git checkout --quiet "$BASELINE_COMMIT" -- . 2>/dev/null && git clean -fd --quiet 2>/dev/null); then
+        echo -e "  ${RED}Failed to reset to baseline${NC}"
         return 1
     fi
 
@@ -179,9 +190,9 @@ run_evaluation() {
         passed=1
     fi
 
-    # Clean up cloned repo to prevent nested workspace issues
-    echo "  Cleaning up workspace..."
-    rm -rf "$work_dir"
+    # Reset repo to baseline for next run
+    echo "  Resetting workspace..."
+    (cd "$work_dir" && git checkout --quiet "$BASELINE_COMMIT" -- . 2>/dev/null && git clean -fd --quiet 2>/dev/null)
 
     if [[ $passed -eq 1 ]]; then
         echo -e "\n  ${GREEN}✅ PASSED${NC}"
