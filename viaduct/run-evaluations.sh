@@ -106,6 +106,13 @@ run_evaluation() {
     mkdir -p "$work_dir/.claude/skills/viaduct"
     rsync -a --exclude='.eval-workspace' --exclude='.eval-outputs' --exclude='node_modules' --exclude='eval-kotlin/build' --exclude='eval-kotlin/.gradle' "$SKILL_DIR/" "$work_dir/.claude/skills/viaduct/"
 
+    # Start Supabase (requires podman)
+    echo "  Starting Supabase..."
+    (cd "$work_dir" && podman machine start 2>/dev/null || true)
+    if ! (cd "$work_dir" && supabase start > /dev/null 2>&1); then
+        echo -e "  ${YELLOW}Warning: Supabase start failed (may already be running)${NC}"
+    fi
+
     # Get IAP auth token for internal gateway
     echo "  Getting IAP auth token..."
     local auth_token
@@ -132,8 +139,12 @@ run_evaluation() {
     fi
 
     # Run gradle build (gradlew is in backend/)
+    # Set Supabase env vars from mise.toml defaults
     echo "  Running gradle build..."
     local build_success=0
+    export SUPABASE_URL="http://127.0.0.1:54321"
+    export SUPABASE_ANON_KEY="sb_publishable_ACJWlzQHlZjBrEguHvfOxg_3BJgxAaH"
+    export SUPABASE_SERVICE_ROLE_KEY="sb_secret_N7UND0UgjKTVK-Uodkm0Hg_xSvEMPvz"
     if (cd "$work_dir/backend" && ./gradlew classes --no-daemon -q > "$build_output" 2>&1); then
         build_success=1
         echo -e "  ${GREEN}Build: PASSED${NC}"
