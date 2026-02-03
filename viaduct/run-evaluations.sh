@@ -142,9 +142,8 @@ run_evaluation() {
          CLAUDE_CODE_SKIP_BEDROCK_AUTH=1 \
          ANTHROPIC_AUTH_TOKEN="$auth_token" \
          claude -p "$eval_query" \
-               --allowedTools "Read,Glob,Grep,Write,Edit,Bash" \
+               --dangerously-skip-permissions \
                --no-session-persistence \
-               --permission-mode "acceptEdits" \
                "$work_dir" > "$claude_output" 2>&1; then
         echo -e "  ${RED}Claude execution failed${NC}"
     fi
