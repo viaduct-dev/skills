@@ -137,11 +137,16 @@ run_evaluation() {
     echo "  Running Claude with skill..."
     echo "  Query: ${eval_query:0:60}..."
 
+    # Prepend instruction to work only in this workspace
+    local full_query="IMPORTANT: Work ONLY in the current directory ($work_dir). Do NOT search or reference any other directories. Implement the following in this workspace:
+
+$eval_query"
+
     if ! CLAUDE_CODE_USE_BEDROCK=1 \
          ANTHROPIC_BEDROCK_BASE_URL="https://devaigateway.a.musta.ch/bedrock" \
          CLAUDE_CODE_SKIP_BEDROCK_AUTH=1 \
          ANTHROPIC_AUTH_TOKEN="$auth_token" \
-         claude -p "$eval_query" \
+         claude -p "$full_query" \
                --dangerously-skip-permissions \
                --no-session-persistence \
                "$work_dir" > "$claude_output" 2>&1; then
