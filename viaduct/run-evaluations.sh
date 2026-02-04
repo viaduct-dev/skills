@@ -98,7 +98,6 @@ run_evaluation() {
     local work_dir="$REPO_DIR"
     local claude_output="$OUTPUT_DIR/$eval_id-claude.txt"
     local build_output="$OUTPUT_DIR/$eval_id-build.txt"
-    local debug_output="$OUTPUT_DIR/$eval_id-debug.txt"
 
     echo ""
     echo "============================================================"
@@ -151,16 +150,14 @@ run_evaluation() {
 
 $eval_query"
 
-    # Run claude FROM the workspace directory so project skills are discovered
-    if ! (cd "$work_dir" && CLAUDE_CODE_USE_BEDROCK=1 \
+    if ! CLAUDE_CODE_USE_BEDROCK=1 \
          ANTHROPIC_BEDROCK_BASE_URL="https://devaigateway.a.musta.ch/bedrock" \
          CLAUDE_CODE_SKIP_BEDROCK_AUTH=1 \
          ANTHROPIC_AUTH_TOKEN="$auth_token" \
          claude -p "$full_query" \
                --dangerously-skip-permissions \
                --no-session-persistence \
-               --debug-file "$debug_output" \
-               > "$claude_output" 2>&1); then
+               "$work_dir" > "$claude_output" 2>&1; then
         echo -e "  ${RED}Claude execution failed${NC}"
     fi
 
@@ -191,17 +188,17 @@ $eval_query"
 $build_error
 \`\`\`
 
-Fix the build error."
+Work ONLY in $work_dir. Fix the build error."
 
-                # Run Claude to fix the error from the workspace directory
-                if ! (cd "$work_dir" && CLAUDE_CODE_USE_BEDROCK=1 \
+                # Run Claude to fix the error (continue in same session would be ideal, but we use a new prompt)
+                if ! CLAUDE_CODE_USE_BEDROCK=1 \
                      ANTHROPIC_BEDROCK_BASE_URL="https://devaigateway.a.musta.ch/bedrock" \
                      CLAUDE_CODE_SKIP_BEDROCK_AUTH=1 \
                      ANTHROPIC_AUTH_TOKEN="$auth_token" \
                      claude -p "$fix_query" \
                            --dangerously-skip-permissions \
                            --no-session-persistence \
-                           >> "$claude_output" 2>&1); then
+                           "$work_dir" >> "$claude_output" 2>&1; then
                     echo -e "  ${RED}Claude fix attempt failed${NC}"
                 fi
             else
