@@ -94,6 +94,7 @@ run_evaluation() {
     local eval_name="$2"
     local eval_query="$3"
     local verify_patterns="$4"
+    local negative_patterns="$5"
 
     local work_dir="$REPO_DIR"
     local claude_output="$OUTPUT_DIR/$eval_id-claude.txt"
@@ -210,12 +211,12 @@ Work ONLY in $work_dir. Fix the build error."
         ((attempt++))
     done
 
-    # Check patterns
+    # Check required patterns
     local patterns_found=0
     local patterns_total=0
 
     if [[ -n "$verify_patterns" ]]; then
-        echo "  Checking patterns..."
+        echo "  Checking required patterns..."
         while IFS= read -r pattern; do
             if [[ -n "$pattern" ]]; then
                 ((patterns_total++))
@@ -229,9 +230,26 @@ Work ONLY in $work_dir. Fix the build error."
         done <<< "$verify_patterns"
     fi
 
+    # Check negative patterns (should NOT be found)
+    local negative_violations=0
+
+    if [[ -n "$negative_patterns" ]]; then
+        echo "  Checking forbidden patterns (should NOT appear)..."
+        while IFS= read -r pattern; do
+            if [[ -n "$pattern" ]]; then
+                if grep -rqE "$pattern" "$work_dir/backend/src" 2>/dev/null; then
+                    ((negative_violations++))
+                    echo -e "    ${RED}✗ FOUND (bad):${NC} $pattern"
+                else
+                    echo -e "    ${GREEN}✓ not found:${NC} $pattern"
+                fi
+            fi
+        done <<< "$negative_patterns"
+    fi
+
     # Determine result
     local passed=0
-    if [[ $build_success -eq 1 ]] && [[ $patterns_found -eq $patterns_total ]]; then
+    if [[ $build_success -eq 1 ]] && [[ $patterns_found -eq $patterns_total ]] && [[ $negative_violations -eq 0 ]]; then
         passed=1
     fi
 
@@ -270,11 +288,12 @@ main() {
     local skipped=0
 
     for i in $(seq 0 $((eval_count - 1))); do
-        local eval_id eval_name eval_query verify_patterns
+        local eval_id eval_name eval_query verify_patterns negative_patterns
         eval_id=$(jq -r ".[$i].id" "$EVAL_FILE")
         eval_name=$(jq -r ".[$i].name" "$EVAL_FILE")
         eval_query=$(jq -r ".[$i].query" "$EVAL_FILE")
         verify_patterns=$(jq -r ".[$i].verify_patterns | .[]?" "$EVAL_FILE" 2>/dev/null || echo "")
+        negative_patterns=$(jq -r ".[$i].negative_patterns | .[]?" "$EVAL_FILE" 2>/dev/null || echo "")
 
         # Skip if filter provided and doesn't match
         if [[ -n "$filter" && "$eval_id" != "$filter" && "$eval_name" != *"$filter"* ]]; then
@@ -282,7 +301,7 @@ main() {
             continue
         fi
 
-        if run_evaluation "$eval_id" "$eval_name" "$eval_query" "$verify_patterns"; then
+        if run_evaluation "$eval_id" "$eval_name" "$eval_query" "$verify_patterns" "$negative_patterns"; then
             ((passed++))
         else
             ((failed++))

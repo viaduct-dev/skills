@@ -142,5 +142,68 @@
       "nodeFor",
       "globalIDFor.*User"
     ]
+  },
+  {
+    "id": "gotcha-01-missing-idof-input",
+    "name": "Gotcha: Missing @idOf on Mutation Input",
+    "skills": ["viaduct"],
+    "query": "Create an updateTask mutation that takes a task ID and new title. The mutation should update the task in the database and return the updated Task.",
+    "files": [],
+    "expected_behavior": [
+      "Creates UpdateTaskInput with 'id: ID! @idOf(type: \"Task\")'",
+      "Uses input.id.internalID to get UUID (not Base64 decoding)",
+      "Mutation resolver extends MutationResolvers.UpdateTask"
+    ],
+    "verify_patterns": [
+      "@idOf\\(type: \"Task\"\\)",
+      "MutationResolvers.UpdateTask",
+      "internalID"
+    ],
+    "negative_patterns": [
+      "Base64\\.getDecoder",
+      "substringAfter\\(\":\"\\)"
+    ]
+  },
+  {
+    "id": "gotcha-02-missing-idof-query-arg",
+    "name": "Gotcha: Missing @idOf on Query Argument",
+    "skills": ["viaduct"],
+    "query": "Add a query to fetch a project by its ID. The query should be 'project(id: ID!): Project' and return the project from the database.",
+    "files": [],
+    "expected_behavior": [
+      "Query uses 'project(id: ID! @idOf(type: \"Project\")): Project @resolver'",
+      "Uses ctx.arguments.id.internalID for database lookup",
+      "Does NOT manually decode Base64 GlobalID"
+    ],
+    "verify_patterns": [
+      "project\\(id: ID! @idOf\\(type: \"Project\"\\)\\)",
+      "internalID"
+    ],
+    "negative_patterns": [
+      "Base64\\.getDecoder",
+      "substringAfter\\(\":\"\\)"
+    ]
+  },
+  {
+    "id": "gotcha-03-globalid-response",
+    "name": "Gotcha: Returning Raw UUID Instead of GlobalID",
+    "skills": ["viaduct"],
+    "query": "Create a createItem mutation that creates a new Item with a name field. The mutation should return the created Item with its proper ID.",
+    "files": [],
+    "expected_behavior": [
+      "Mutation resolver extends MutationResolvers.CreateItem",
+      "Uses ctx.globalIDFor(Item.Reflection, uuid) when building response",
+      "Does NOT set .id(rawUuid) directly"
+    ],
+    "verify_patterns": [
+      "MutationResolvers.CreateItem",
+      "globalIDFor\\(Item\\.Reflection",
+      "Item\\.Builder"
+    ],
+    "negative_patterns": [
+      "\\.id\\([a-z]+Id\\)",
+      "\\.id\\(uuid\\)",
+      "\\.id\\(UUID\\."
+    ]
   }
 ]
