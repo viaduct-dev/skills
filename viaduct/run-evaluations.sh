@@ -147,7 +147,9 @@ run_evaluation() {
     echo "  Running Claude with skill (attempt 1/$MAX_RETRIES)..."
     echo "  Query: ${eval_query:0:60}..."
 
-    local full_query="IMPORTANT: Work ONLY in the current directory ($work_dir). Do NOT search or reference any other directories. Implement the following in this workspace:
+    local full_query="/viaduct
+
+IMPORTANT: Work ONLY in the current directory ($work_dir). Do NOT search or reference any other directories. Implement the following in this workspace:
 
 $eval_query"
 

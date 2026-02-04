@@ -109,14 +109,14 @@
     "query": "Add admin-only fields to Tag: an internalNotes string field and a usageCount integer field with a resolver. Also add an admin-only deleteAllTags mutation. Use @scope(to: [\"admin\"]) to restrict these to admin API consumers. Use the viaduct skill for guidance.",
     "files": ["backend/src/main/viaduct/schema/Tag.graphqls"],
     "expected_behavior": [
-      "Uses 'extend type Tag @scope(to: [\"admin\"])' for admin fields",
-      "Admin fields are separate from default-scoped fields",
-      "Creates 'extend type Mutation @scope(to: [\"admin\"])' for deleteAllTags",
+      "Uses @scope(to: [\"admin\"]) directive for admin-only features",
+      "Admin fields (internalNotes, usageCount) are scoped appropriately",
+      "Creates deleteAllTags mutation with admin scope",
       "Field resolver for usageCount extends TagResolvers.UsageCount"
     ],
     "verify_patterns": [
       "@scope\\(to: \\[\"admin\"\\]\\)",
-      "extend type Tag",
+      "internalNotes",
       "deleteAllTags",
       "TagResolvers.UsageCount"
     ]

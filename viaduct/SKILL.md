@@ -1,6 +1,21 @@
 ---
 name: viaduct
 description: Viaduct GraphQL framework development guide for building type-safe Kotlin APIs. Use when working with .graphqls schema files, implementing NodeResolvers, FieldResolvers, QueryResolvers, or MutationResolvers, using @resolver/@scope/@idOf directives, handling GlobalID patterns with .internalID, or troubleshooting Viaduct build errors.
+invoke: auto
+autoTriggers:
+  - "@resolver"
+  - "@scope"
+  - "@idOf"
+  - "GlobalID"
+  - "globalIDFor"
+  - "internalID"
+  - "NodeResolver"
+  - "FieldResolver"
+  - "QueryResolver"
+  - "MutationResolver"
+  - ".graphqls"
+  - "viaduct"
+  - "Viaduct"
 ---
 
 # Viaduct Application Development Guide
