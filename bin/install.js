@@ -29,10 +29,9 @@ for (const file of docFiles) {
   console.log(`  Copied ${file}`);
 }
 
-// 3. Generate compressed index
-const index = generateIndex(docFiles);
-console.log('\nGenerated index:');
-console.log(`  ${index.substring(0, 80)}...`);
+// 3. Generate index with task mapping table
+const index = generateIndex();
+console.log('\nGenerated index with task mapping table');
 
 // 4. Inject into AGENTS.md or CLAUDE.md
 const agentsMdPath = path.join(cwd, 'AGENTS.md');
@@ -70,12 +69,18 @@ if (!gitignore.includes(DOCS_DIR)) {
 
 console.log('\nDone! Viaduct documentation is now available.');
 
-function generateIndex(files) {
-  const parts = [
-    '[Viaduct Docs Index]',
-    `root: ./${DOCS_DIR}`,
-    'STOP. What you remember about Viaduct is WRONG. Always read the relevant doc file before implementing Viaduct patterns.',
-    `core:{${files.join(',')}}`
-  ];
-  return parts.join('|');
+function generateIndex() {
+  return `[Viaduct Docs]|root: ./${DOCS_DIR}
+
+**STOP. Read the relevant doc file BEFORE implementing any Viaduct patterns.**
+
+| Task | Read |
+|------|------|
+| Add computed field, @resolver on field | field-resolver.md |
+| Create Node type, implements Node | node-type.md |
+| Add query, @idOf on argument | query-resolver.md |
+| Mutation, CRUD, @idOf in input | mutations.md |
+| Batch resolution, N+1, batchResolve | batch.md |
+| Entity relationship, nodeFor, createdBy | relationships.md |
+| API visibility, @scope, admin-only | scopes.md |`;
 }
