@@ -91,17 +91,10 @@ setup_project() {
         return 1
     fi
 
-    # Install micro-skills if in skill mode
+    # Install AGENTS.md with doc references if in skill mode
     if [[ $USE_SKILL -eq 1 ]]; then
-        echo "  Installing viaduct micro-skills..."
-        local skills_root="$(dirname "$SCRIPT_DIR")"
-        for skill_dir in "$skills_root"/viaduct-*/; do
-            if [[ -d "$skill_dir" ]]; then
-                local skill_name="$(basename "$skill_dir")"
-                mkdir -p "$WORK_DIR/.claude/skills/$skill_name"
-                cp "$skill_dir/SKILL.md" "$WORK_DIR/.claude/skills/$skill_name/"
-            fi
-        done
+        echo "  Installing AGENTS.md with Viaduct docs..."
+        (cd "$WORK_DIR" && node "$SCRIPT_DIR/../bin/install.js") > /dev/null 2>&1
     fi
 
     return 0

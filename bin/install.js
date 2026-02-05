@@ -72,15 +72,51 @@ console.log('\nDone! Viaduct documentation is now available.');
 function generateIndex() {
   return `[Viaduct Docs]|root: ./${DOCS_DIR}
 
-**STOP. Read the relevant doc file BEFORE implementing any Viaduct patterns.**
+## Viaduct Framework
 
-| Task | Read |
-|------|------|
-| Add computed field, @resolver on field | field-resolver.md |
-| Create Node type, implements Node | node-type.md |
-| Add query, @idOf on argument | query-resolver.md |
-| Mutation, CRUD, @idOf in input | mutations.md |
-| Batch resolution, N+1, batchResolve | batch.md |
-| Entity relationship, nodeFor, createdBy | relationships.md |
-| API visibility, @scope, admin-only | scopes.md |`;
+**⚠️ MANDATORY: Read docs AND check schema before implementing.**
+
+| Task | Read First |
+|------|------------|
+| Mutation, input with ID field | mutations.md |
+| Query with ID argument | query-resolver.md |
+| Add computed field (@resolver) | field-resolver.md |
+| Create Node type | node-type.md |
+| Batch resolution, N+1 | batch.md |
+| Entity relationships | relationships.md |
+| Scope/visibility | scopes.md |
+
+## ⛔ BEFORE WRITING ANY CODE
+
+**Step 1: Check the schema for missing @idOf directives**
+
+Scan ALL ID fields in input types and query arguments. If any \`id: ID!\` is missing \`@idOf\`, you MUST add it:
+
+\`\`\`graphql
+# ❌ BROKEN - Missing @idOf causes "String but GlobalID expected" errors
+input UpdateTaskInput {
+  id: ID!  # <-- FIX THIS FIRST
+}
+
+# ✅ FIXED - Add @idOf to enable .internalID
+input UpdateTaskInput {
+  id: ID! @idOf(type: "Task")
+}
+\`\`\`
+
+**Step 2: Then implement the resolver using .internalID**
+
+\`\`\`kotlin
+val taskId = input.id.internalID  // Only works with @idOf
+\`\`\`
+
+## Common Error → Solution
+
+| Build Error | Solution |
+|-------------|----------|
+| Type mismatch: String but GlobalID expected | Add \`@idOf(type: "X")\` to schema |
+| internalID not a member of String | Add \`@idOf(type: "X")\` to schema |
+| Cannot convert String to GlobalID | Add \`@idOf(type: "X")\` to schema |
+
+**DO NOT work around these errors with Base64 decoding or ctx.globalIDFor() on strings. Fix the schema.**`;
 }

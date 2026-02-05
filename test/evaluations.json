@@ -95,17 +95,17 @@
     "name": "Scope-based API Visibility",
     "skills": ["viaduct-scopes"],
     "schema": "type Tag implements Node @resolver @scope(to: [\"default\"]) {\n    id: ID!\n    name: String!\n}",
-    "query": "Add some admin-only fields to Tag: internalNotes (string) and usageCount (computed integer). Also add an admin-only deleteAllTags mutation. These should only be visible to admin API consumers, not the default scope.",
+    "query": "Add admin-only operations for Tag: a way to get/set internalNotes, get usageCount, and delete all tags. These should only be visible to admin API consumers, not the default scope.",
     "expected_behavior": [
-      "Uses 'extend type Tag @scope(to: [\"admin\"])' for admin fields",
-      "Creates 'extend type Mutation @scope(to: [\"admin\"])' for deleteAllTags",
-      "Field resolver for usageCount extends TagResolvers.UsageCount"
+      "Creates 'extend type Mutation @scope(to: [\"admin\"])' for admin mutations",
+      "Uses mutations instead of fields (extend type Tag doesn't work)",
+      "Includes deleteAllTags mutation"
     ],
     "verify_patterns": [
       "@scope\\(to: \\[\"admin\"\\]\\)",
-      "extend type Tag",
+      "extend type Mutation",
       "deleteAllTags",
-      "TagResolvers.UsageCount"
+      "MutationResolvers"
     ]
   },
   {
@@ -130,7 +130,7 @@
     "name": "Gotcha: Input Type Missing @idOf",
     "skills": ["viaduct-mutations"],
     "schema": "type Task implements Node @resolver @scope(to: [\"default\"]) {\n    id: ID!\n    title: String!\n    completed: Boolean!\n}\n\ninput UpdateTaskInput {\n    id: ID!\n    title: String\n    completed: Boolean\n}\n\nextend type Mutation {\n    updateTask(input: UpdateTaskInput!): Task! @resolver\n}",
-    "query": "I want to be able to update a task. Implement the updateTask mutation. Return hardcoded data for now.",
+    "query": "Implement the updateTask mutation. The resolver MUST extract the task ID from input.id and log it. Return mock data using that ID.",
     "expected_behavior": [
       "Recognizes @idOf is missing from UpdateTaskInput.id",
       "Adds @idOf(type: \"Task\") to the id field in schema",
@@ -140,7 +140,7 @@
     "verify_patterns": [
       "@idOf\\(type: \"Task\"\\)",
       "MutationResolvers.UpdateTask",
-      "internalID"
+      "input\\.id"
     ],
     "negative_patterns": [
       "Base64\\.getDecoder",
@@ -163,7 +163,7 @@
     "verify_patterns": [
       "project\\(id: ID! @idOf\\(type: \"Project\"\\)\\)",
       "QueryResolvers.Project",
-      "internalID"
+      "ctx\\.arguments\\.id"
     ],
     "negative_patterns": [
       "Base64\\.getDecoder",
