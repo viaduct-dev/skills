@@ -1,33 +1,55 @@
-# Viaduct Claude Code Skills
+# Viaduct Skills
 
-A collection of Claude Code skills for Viaduct development.
-
-## Available Skills
-
-| Skill | Description |
-|-------|-------------|
-| [viaduct](./viaduct/) | Viaduct GraphQL framework development guide (auto-triggers) |
+Documentation for AI coding agents working with the Viaduct GraphQL framework.
 
 ## Installation
 
-### Global Installation (all projects)
-
-Symlink the skill directory to your Claude skills folder:
+Run from your Viaduct project root:
 
 ```bash
-ln -s /path/to/skills/viaduct ~/.claude/skills/viaduct
+npx @viaduct-dev/skills
 ```
 
-### Project-Specific Installation
+This will:
+1. Copy documentation files to `.viaduct-docs/`
+2. Add a task-to-doc mapping to your `AGENTS.md` (or `CLAUDE.md`)
+3. Update `.gitignore` to exclude the generated docs
+
+## What's Included
+
+| Doc | When to Read |
+|-----|--------------|
+| mutations.md | Any mutation |
+| query-resolver.md | Any query with ID argument |
+| field-resolver.md | Field with @resolver |
+| node-type.md | Type with `implements Node` |
+| batch.md | List field, N+1 prevention |
+| relationships.md | Field returning another Node (createdBy, owner) |
+| scopes.md | Scope/visibility |
+
+## Development
+
+### Running Evaluations
+
+The `test/` directory contains an evaluation harness to test skill effectiveness:
 
 ```bash
-ln -s /path/to/skills/viaduct .claude/skills/viaduct
+cd test
+./run-evaluations.sh              # Run all evaluations
+./run-evaluations.sh eval-01      # Run specific evaluation
+./run-evaluations.sh --no-skill   # Run without skills (baseline)
 ```
 
-## Contributing
+Evaluations test whether Claude correctly implements Viaduct patterns when given the skill documentation.
 
-Each skill lives in its own directory with:
-- `SKILL.md` - Main skill file with YAML frontmatter for auto-triggering
-- `resources/` - Supporting documentation files
+### Project Structure
 
-See the [viaduct](./viaduct/) skill for an example structure.
+```
+├── bin/install.js       # npx installer
+├── viaduct-docs/        # Documentation files
+├── viaduct-*/           # Micro-skill definitions (for skill triggers)
+└── test/                # Evaluation harness
+    ├── evaluations.json # Evaluation definitions
+    ├── run-evaluations.sh
+    └── base-template/   # Template project for evals
+```
