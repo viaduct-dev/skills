@@ -91,11 +91,17 @@ setup_project() {
         return 1
     fi
 
-    # Install skill if in skill mode
+    # Install micro-skills if in skill mode
     if [[ $USE_SKILL -eq 1 ]]; then
-        echo "  Installing viaduct skill..."
-        mkdir -p "$WORK_DIR/.claude/skills/viaduct"
-        cp "$SCRIPT_DIR/SKILL.md" "$WORK_DIR/.claude/skills/viaduct/"
+        echo "  Installing viaduct micro-skills..."
+        local skills_root="$(dirname "$SCRIPT_DIR")"
+        for skill_dir in "$skills_root"/viaduct-*/; do
+            if [[ -d "$skill_dir" ]]; then
+                local skill_name="$(basename "$skill_dir")"
+                mkdir -p "$WORK_DIR/.claude/skills/$skill_name"
+                cp "$skill_dir/SKILL.md" "$WORK_DIR/.claude/skills/$skill_name/"
+            fi
+        done
     fi
 
     return 0
