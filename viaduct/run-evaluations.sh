@@ -1,92 +1,124 @@
 #!/bin/bash
 #
-# Viaduct Skill Evaluation Harness (Shell version)
+# Viaduct Skill Evaluation Harness
 #
-# Runs evaluations against the viaduct skill using viaduct-batteries-included.
+# Runs evaluations against the viaduct skill.
 # Each evaluation:
-#   1. Clones viaduct-batteries-included
-#   2. Checks out baseline commit (before features were added)
-#   3. Runs Claude with the skill to implement the feature
-#   4. Runs ./gradlew build to verify compilation
-#   5. Checks for expected patterns in generated code
+#   1. Copies base-template to temp directory
+#   2. Appends eval-specific schema types
+#   3. Runs Gradle to generate scaffolding
+#   4. Runs Claude to implement the feature
+#   5. Builds and verifies patterns
 #
 # Usage:
-#   ./run-evaluations.sh [eval-id]
-#   MAX_RETRIES=3 ./run-evaluations.sh        # Set max retry attempts
+#   ./run-evaluations.sh [options] [eval-id]
 #
-# Requirements:
-#   - Claude Code CLI installed
-#   - ANTHROPIC_API_KEY set
-#   - Java 17+ and Gradle
-#   - Git access to viaduct-dev/viaduct-batteries-included
+# Options:
+#   --no-skill    Run without the viaduct skill (baseline test)
+#   --skill       Run with the viaduct skill (default)
 #
-
-set -e
+# Environment:
+#   MAX_RETRIES=3    Set max retry attempts
+#
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-SKILL_DIR="$SCRIPT_DIR"  # The skill directory (where this script lives)
 EVAL_FILE="$SCRIPT_DIR/evaluations.json"
-WORKSPACE_DIR="/tmp/viaduct-skill-eval"  # Use /tmp to avoid recursive copy
 OUTPUT_DIR="$SCRIPT_DIR/.eval-outputs"
+BASE_TEMPLATE="$SCRIPT_DIR/base-template"
+WORK_DIR="/tmp/viaduct-skill-eval"
 
-REPO_URL="git@github.com:viaduct-dev/viaduct-batteries-included.git"
-BASELINE_BRANCH="render-template"  # Clean baseline branch for evaluations
-REPO_DIR="$WORKSPACE_DIR/repo"  # Single cloned repo, reused across evaluations
-
-# Retry configuration (can be overridden via environment)
+# Default settings
+USE_SKILL=1
+FILTER=""
 MAX_RETRIES="${MAX_RETRIES:-3}"
 
-# Colors for output
+# Colors
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
-NC='\033[0m' # No Color
+BLUE='\033[0;34m'
+CYAN='\033[0;36m'
+NC='\033[0m'
 
-mkdir -p "$WORKSPACE_DIR"
+# Parse arguments
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --no-skill)
+            USE_SKILL=0
+            shift
+            ;;
+        --skill)
+            USE_SKILL=1
+            shift
+            ;;
+        *)
+            FILTER="$1"
+            shift
+            ;;
+    esac
+done
+
 mkdir -p "$OUTPUT_DIR"
 
-# Check dependencies
 check_deps() {
     local missing=0
-
-    if ! command -v jq &> /dev/null; then
-        echo -e "${RED}Error: jq is required. Install with: brew install jq${NC}"
-        missing=1
-    fi
-
-    if ! command -v claude &> /dev/null; then
-        echo -e "${RED}Error: claude CLI is required.${NC}"
-        missing=1
-    fi
-
-    if ! command -v git &> /dev/null; then
-        echo -e "${RED}Error: git is required.${NC}"
-        missing=1
-    fi
-
-    if ! command -v java &> /dev/null; then
-        echo -e "${RED}Error: java is required (17+).${NC}"
-        missing=1
-    fi
-
-    if [[ $missing -eq 1 ]]; then
-        exit 1
-    fi
+    command -v jq &>/dev/null || { echo -e "${RED}Error: jq required${NC}"; missing=1; }
+    command -v claude &>/dev/null || { echo -e "${RED}Error: claude CLI required${NC}"; missing=1; }
+    command -v java &>/dev/null || { echo -e "${RED}Error: java 17+ required${NC}"; missing=1; }
+    [[ ! -d "$BASE_TEMPLATE" ]] && { echo -e "${RED}Error: base-template not found at $BASE_TEMPLATE${NC}"; missing=1; }
+    [[ $missing -eq 1 ]] && exit 1
 }
 
-ensure_repo_cloned() {
-    if [[ -d "$REPO_DIR/.git" ]]; then
-        echo "  Using cached repository..."
-        return 0
+setup_project() {
+    local schema_addition="$1"
+
+    echo "  Setting up fresh project from base-template..."
+
+    # Clean and copy base template
+    rm -rf "$WORK_DIR"
+    cp -r "$BASE_TEMPLATE" "$WORK_DIR"
+
+    # Append schema types for this evaluation
+    if [[ -n "$schema_addition" ]]; then
+        echo "" >> "$WORK_DIR/src/main/viaduct/schema/Schema.graphqls"
+        echo "$schema_addition" >> "$WORK_DIR/src/main/viaduct/schema/Schema.graphqls"
     fi
 
-    echo "  Cloning repository (first run only)..."
-    rm -rf "$REPO_DIR"
-    if ! git clone --quiet -b "$BASELINE_BRANCH" "$REPO_URL" "$REPO_DIR" 2>/dev/null; then
-        echo -e "  ${RED}Failed to clone repository${NC}"
+    # Generate scaffolding with Gradle
+    echo "  Generating Viaduct scaffolding..."
+    if ! (cd "$WORK_DIR" && ./gradlew viaductCodegen --no-daemon -q 2>&1); then
+        echo -e "  ${RED}Scaffolding generation failed${NC}"
         return 1
     fi
+
+    # Install skill if in skill mode
+    if [[ $USE_SKILL -eq 1 ]]; then
+        echo "  Installing viaduct skill..."
+        mkdir -p "$WORK_DIR/.claude/skills/viaduct"
+        cp "$SCRIPT_DIR/SKILL.md" "$WORK_DIR/.claude/skills/viaduct/"
+    fi
+
     return 0
+}
+
+# Extract the key error from build output
+extract_error_summary() {
+    local build_output="$1"
+
+    # Look for common error patterns and extract the key line
+    if grep -q "Unresolved reference" "$build_output" 2>/dev/null; then
+        grep "Unresolved reference" "$build_output" | head -1 | sed 's/.*: //'
+    elif grep -q "cannot find symbol" "$build_output" 2>/dev/null; then
+        grep "cannot find symbol" "$build_output" | head -1
+    elif grep -q "not found" "$build_output" 2>/dev/null; then
+        grep -E "not found|Not found" "$build_output" | head -1 | sed 's/.*: //'
+    elif grep -q "expected" "$build_output" 2>/dev/null; then
+        grep "expected" "$build_output" | head -1
+    elif grep -q "error:" "$build_output" 2>/dev/null; then
+        grep "error:" "$build_output" | head -1 | sed 's/.*error: //'
+    else
+        tail -3 "$build_output" | head -1
+    fi
 }
 
 run_evaluation() {
@@ -94,207 +126,142 @@ run_evaluation() {
     local eval_name="$2"
     local eval_query="$3"
     local verify_patterns="$4"
-    local negative_patterns="$5"
+    local schema_addition="$5"
+    local negative_patterns="$6"
 
-    local work_dir="$REPO_DIR"
-    local claude_output="$OUTPUT_DIR/$eval_id-claude.txt"
-    local build_output="$OUTPUT_DIR/$eval_id-build.txt"
+    local suffix=$([[ $USE_SKILL -eq 0 ]] && echo "-noskill" || echo "")
+    local claude_output="$OUTPUT_DIR/$eval_id$suffix-claude.txt"
+    local build_output="$OUTPUT_DIR/$eval_id$suffix-build.txt"
+    local errors_file="$OUTPUT_DIR/$eval_id$suffix-errors.txt"
 
     echo ""
     echo "============================================================"
     echo -e "${YELLOW}$eval_id: $eval_name${NC}"
+    [[ $USE_SKILL -eq 0 ]] && echo -e "${BLUE}(NO SKILL MODE)${NC}"
     echo "============================================================"
 
-    # Clone repo if not already present
-    if ! ensure_repo_cloned; then
+    # Setup fresh project with schema for this eval
+    if ! setup_project "$schema_addition"; then
+        echo "SETUP_FAILED" > "$errors_file"
         return 1
     fi
 
-    # Reset to baseline (clean slate for each evaluation)
-    echo "  Resetting to baseline ($BASELINE_BRANCH)..."
-    if ! (cd "$work_dir" && git reset --hard "origin/$BASELINE_BRANCH" --quiet 2>/dev/null && git clean -fd --quiet 2>/dev/null); then
-        echo -e "  ${RED}Failed to reset to baseline${NC}"
-        return 1
-    fi
+    # Clear errors file
+    > "$errors_file"
 
-    # Copy skill into project (excluding workspace/output dirs)
-    echo "  Installing skill..."
-    mkdir -p "$work_dir/.claude/skills/viaduct"
-    rsync -a --exclude='.eval-workspace' --exclude='.eval-outputs' --exclude='node_modules' --exclude='eval-kotlin/build' --exclude='eval-kotlin/.gradle' "$SKILL_DIR/" "$work_dir/.claude/skills/viaduct/"
-
-    # Start Supabase (requires podman)
-    echo "  Starting Supabase..."
-    (cd "$work_dir" && podman machine start 2>/dev/null || true)
-    if ! (cd "$work_dir" && supabase start > /dev/null 2>&1); then
-        echo -e "  ${YELLOW}Warning: Supabase start failed (may already be running)${NC}"
-    fi
-
-    # Get IAP auth token for internal gateway
+    # Get auth token
     echo "  Getting IAP auth token..."
     local auth_token
     auth_token=$(iap-auth https://devaigateway.a.musta.ch 2>/dev/null)
     if [[ -z "$auth_token" ]]; then
         echo -e "  ${RED}Failed to get IAP auth token${NC}"
+        echo "AUTH_FAILED" >> "$errors_file"
         return 1
     fi
 
-    # Set Supabase env vars from mise.toml defaults
-    export SUPABASE_URL="http://127.0.0.1:54321"
-    export SUPABASE_ANON_KEY="sb_publishable_ACJWlzQHlZjBrEguHvfOxg_3BJgxAaH"
-    export SUPABASE_SERVICE_ROLE_KEY="sb_secret_N7UND0UgjKTVK-Uodkm0Hg_xSvEMPvz"
-
-    # Build skill context by reading SKILL.md and key resources
-    echo "  Loading skill documentation..."
-    local skill_context=""
-
-    # Read SKILL.md (skip frontmatter)
-    if [[ -f "$work_dir/.claude/skills/viaduct/SKILL.md" ]]; then
-        skill_context="$(sed '1,/^---$/d; 1,/^---$/d' "$work_dir/.claude/skills/viaduct/SKILL.md")"
-    fi
-
-    # Read key resource files based on eval type
-    local resources_dir="$work_dir/.claude/skills/viaduct/resources"
-    if [[ -d "$resources_dir" ]]; then
-        # Always include entities and globalid docs
-        for doc in "$resources_dir/core/entities.md" "$resources_dir/gotchas/global-ids.md"; do
-            if [[ -f "$doc" ]]; then
-                skill_context="$skill_context
-
----
-$(cat "$doc")"
-            fi
-        done
-
-        # Include relevant docs based on query content
-        if echo "$eval_query" | grep -qi "mutation"; then
-            [[ -f "$resources_dir/core/mutations.md" ]] && skill_context="$skill_context
-
----
-$(cat "$resources_dir/core/mutations.md")"
-        fi
-        if echo "$eval_query" | grep -qi "scope\|admin"; then
-            [[ -f "$resources_dir/core/scopes.md" ]] && skill_context="$skill_context
-
----
-$(cat "$resources_dir/core/scopes.md")"
-        fi
-        if echo "$eval_query" | grep -qi "relationship\|createdBy\|nodeFor"; then
-            [[ -f "$resources_dir/core/relationships.md" ]] && skill_context="$skill_context
-
----
-$(cat "$resources_dir/core/relationships.md")"
-        fi
-        if echo "$eval_query" | grep -qi "batch"; then
-            [[ -f "$resources_dir/core/queries.md" ]] && skill_context="$skill_context
-
----
-$(cat "$resources_dir/core/queries.md")"
-        fi
-    fi
-
-    # Initial Claude run
-    echo "  Running Claude with skill (attempt 1/$MAX_RETRIES)..."
-    echo "  Query: ${eval_query:0:60}..."
-
-    local full_query="<viaduct-skill-documentation>
-$skill_context
-</viaduct-skill-documentation>
-
-IMPORTANT: Work ONLY in the current directory ($work_dir). Do NOT search or reference any other directories.
-
-Follow the Viaduct patterns shown in the skill documentation above. Implement the following in this workspace:
+    # Build query - remove skill reference if no-skill mode
+    local full_query
+    if [[ $USE_SKILL -eq 1 ]]; then
+        full_query="Work ONLY in $WORK_DIR. Implement:
 
 $eval_query"
+    else
+        local clean_query="${eval_query//Use the viaduct skill for guidance./}"
+        clean_query="${clean_query//Use the viaduct skill for guidance/}"
+        full_query="Work ONLY in $WORK_DIR. Implement:
 
-    if ! CLAUDE_CODE_USE_BEDROCK=1 \
-         ANTHROPIC_BEDROCK_BASE_URL="https://devaigateway.a.musta.ch/bedrock" \
-         CLAUDE_CODE_SKIP_BEDROCK_AUTH=1 \
-         ANTHROPIC_AUTH_TOKEN="$auth_token" \
-         claude -p "$full_query" \
-               --dangerously-skip-permissions \
-               --no-session-persistence \
-               "$work_dir" > "$claude_output" 2>&1; then
-        echo -e "  ${RED}Claude execution failed${NC}"
+$clean_query"
     fi
 
-    # Build and fix loop - let Claude iterate on failures
+    echo "  Running Claude (attempt 1/$MAX_RETRIES)..."
+
+    CLAUDE_CODE_USE_BEDROCK=1 \
+    ANTHROPIC_BEDROCK_BASE_URL="https://devaigateway.a.musta.ch/bedrock" \
+    CLAUDE_CODE_SKIP_BEDROCK_AUTH=1 \
+    ANTHROPIC_AUTH_TOKEN="$auth_token" \
+    claude -p "$full_query" \
+          --dangerously-skip-permissions \
+          --no-session-persistence \
+          "$WORK_DIR" > "$claude_output" 2>&1 || true
+
+    # Build and fix loop
     local build_success=0
     local attempt=1
+    local retry_errors=()
 
     while [[ $attempt -le $MAX_RETRIES ]]; do
         echo "  Running gradle build (attempt $attempt/$MAX_RETRIES)..."
 
-        if (cd "$work_dir/backend" && ./gradlew classes --no-daemon -q > "$build_output" 2>&1); then
+        # Run viaductCodegen first in case Claude modified the schema (adds new @resolver fields)
+        if (cd "$WORK_DIR" && ./gradlew viaductCodegen classes --no-daemon -q > "$build_output" 2>&1); then
             build_success=1
             echo -e "  ${GREEN}Build: PASSED${NC}"
             break
         else
             echo -e "  ${RED}Build: FAILED${NC}"
 
+            # Extract and save the error
+            local error_summary=$(extract_error_summary "$build_output")
+            echo "Attempt $attempt: $error_summary" >> "$errors_file"
+            retry_errors+=("$error_summary")
+
+            # Show the error
+            echo -e "    ${CYAN}Error: $error_summary${NC}"
+
             if [[ $attempt -lt $MAX_RETRIES ]]; then
-                echo "  Letting Claude fix the build error..."
+                echo "  Letting Claude fix..."
+                local build_error=$(tail -50 "$build_output")
 
-                # Get build error for Claude to fix
-                local build_error
-                build_error=$(tail -50 "$build_output")
-
-                local fix_query="The gradle build failed with the following error. Please fix it:
-
+                CLAUDE_CODE_USE_BEDROCK=1 \
+                ANTHROPIC_BEDROCK_BASE_URL="https://devaigateway.a.musta.ch/bedrock" \
+                CLAUDE_CODE_SKIP_BEDROCK_AUTH=1 \
+                ANTHROPIC_AUTH_TOKEN="$auth_token" \
+                claude -p "Build failed. Fix it:
 \`\`\`
 $build_error
 \`\`\`
-
-Work ONLY in $work_dir. Fix the build error."
-
-                # Run Claude to fix the error (continue in same session would be ideal, but we use a new prompt)
-                if ! CLAUDE_CODE_USE_BEDROCK=1 \
-                     ANTHROPIC_BEDROCK_BASE_URL="https://devaigateway.a.musta.ch/bedrock" \
-                     CLAUDE_CODE_SKIP_BEDROCK_AUTH=1 \
-                     ANTHROPIC_AUTH_TOKEN="$auth_token" \
-                     claude -p "$fix_query" \
-                           --dangerously-skip-permissions \
-                           --no-session-persistence \
-                           "$work_dir" >> "$claude_output" 2>&1; then
-                    echo -e "  ${RED}Claude fix attempt failed${NC}"
-                fi
-            else
-                echo "  Last 10 lines of build output:"
-                tail -10 "$build_output" | sed 's/^/    /'
+Work ONLY in $WORK_DIR." \
+                      --dangerously-skip-permissions \
+                      --no-session-persistence \
+                      "$WORK_DIR" >> "$claude_output" 2>&1 || true
             fi
         fi
-
         ((attempt++))
     done
 
-    # Check required patterns
+    # Check patterns
     local patterns_found=0
     local patterns_total=0
+    local missing_patterns=()
 
     if [[ -n "$verify_patterns" ]]; then
         echo "  Checking required patterns..."
         while IFS= read -r pattern; do
             if [[ -n "$pattern" ]]; then
                 ((patterns_total++))
-                if grep -rqE "$pattern" "$work_dir/backend/src" 2>/dev/null; then
+                if grep -rqE "$pattern" "$WORK_DIR/src" 2>/dev/null; then
                     ((patterns_found++))
                     echo -e "    ${GREEN}✓${NC} $pattern"
                 else
                     echo -e "    ${RED}✗${NC} $pattern"
+                    missing_patterns+=("$pattern")
                 fi
             fi
         done <<< "$verify_patterns"
     fi
 
-    # Check negative patterns (should NOT be found)
-    local negative_violations=0
+    # Check negative patterns (patterns that should NOT appear)
+    local negative_failed=0
+    local found_negative=()
 
     if [[ -n "$negative_patterns" ]]; then
         echo "  Checking forbidden patterns (should NOT appear)..."
         while IFS= read -r pattern; do
             if [[ -n "$pattern" ]]; then
-                if grep -rqE "$pattern" "$work_dir/backend/src" 2>/dev/null; then
-                    ((negative_violations++))
-                    echo -e "    ${RED}✗ FOUND (bad):${NC} $pattern"
+                if grep -rqE "$pattern" "$WORK_DIR/src" 2>/dev/null; then
+                    echo -e "    ${RED}✗ FOUND:${NC} $pattern"
+                    found_negative+=("$pattern")
+                    ((negative_failed++))
                 else
                     echo -e "    ${GREEN}✓ not found:${NC} $pattern"
                 fi
@@ -302,83 +269,141 @@ Work ONLY in $work_dir. Fix the build error."
         done <<< "$negative_patterns"
     fi
 
-    # Determine result
-    local passed=0
-    if [[ $build_success -eq 1 ]] && [[ $patterns_found -eq $patterns_total ]] && [[ $negative_violations -eq 0 ]]; then
-        passed=1
+    # Record missing patterns
+    if [[ ${#missing_patterns[@]} -gt 0 ]]; then
+        echo "Missing patterns:" >> "$errors_file"
+        for p in "${missing_patterns[@]}"; do
+            echo "  - $p" >> "$errors_file"
+        done
     fi
 
-    # Reset repo to baseline for next run
-    echo "  Resetting workspace..."
-    (cd "$work_dir" && git reset --hard "origin/$BASELINE_BRANCH" --quiet 2>/dev/null && git clean -fd --quiet 2>/dev/null)
+    # Record forbidden patterns that were found
+    if [[ ${#found_negative[@]} -gt 0 ]]; then
+        echo "Forbidden patterns found (WRONG!):" >> "$errors_file"
+        for p in "${found_negative[@]}"; do
+            echo "  - $p" >> "$errors_file"
+        done
+    fi
 
-    if [[ $passed -eq 1 ]]; then
-        echo -e "\n  ${GREEN}✅ PASSED${NC} (build succeeded on attempt $attempt)"
+    if [[ $build_success -eq 1 ]] && [[ $patterns_found -eq $patterns_total ]] && [[ $negative_failed -eq 0 ]]; then
+        echo -e "\n  ${GREEN}✅ PASSED${NC} (attempt $attempt)"
+        # Write result to file: "attempt|error1|error2|..."
+        local result="$attempt"
+        for err in "${retry_errors[@]}"; do
+            result="$result|$err"
+        done
+        echo "$result" > "$OUTPUT_DIR/.last-result"
         return 0
     else
         echo -e "\n  ${RED}❌ FAILED${NC}"
+        echo "FAILED" > "$OUTPUT_DIR/.last-result"
         return 1
     fi
 }
 
 main() {
-    local filter="${1:-}"
-
     echo "Viaduct Skill Evaluation Harness"
     echo "================================"
-    echo "Repository: $REPO_URL"
-    echo "Baseline: $BASELINE_BRANCH"
-    echo "Skill: $SCRIPT_DIR"
-    echo "Max retries: $MAX_RETRIES (set MAX_RETRIES=N to change)"
+    echo "Base template: $BASE_TEMPLATE"
+    echo "Work directory: $WORK_DIR"
+    [[ $USE_SKILL -eq 1 ]] && echo -e "Mode: ${GREEN}WITH SKILL${NC}" || echo -e "Mode: ${BLUE}NO SKILL${NC}"
+    echo "Max retries: $MAX_RETRIES"
     echo ""
 
     check_deps
 
-    # Get evaluation count
-    local eval_count
-    eval_count=$(jq length "$EVAL_FILE")
+    local eval_count=$(jq length "$EVAL_FILE")
+    local passed=0 failed=0 skipped=0 one_shot=0
 
-    local passed=0
-    local failed=0
-    local skipped=0
+    # Track detailed results using a temp file
+    local results_file="$OUTPUT_DIR/.results-tmp"
+    > "$results_file"
 
     for i in $(seq 0 $((eval_count - 1))); do
-        local eval_id eval_name eval_query verify_patterns negative_patterns
-        eval_id=$(jq -r ".[$i].id" "$EVAL_FILE")
-        eval_name=$(jq -r ".[$i].name" "$EVAL_FILE")
-        eval_query=$(jq -r ".[$i].query" "$EVAL_FILE")
-        verify_patterns=$(jq -r ".[$i].verify_patterns | .[]?" "$EVAL_FILE" 2>/dev/null || echo "")
-        negative_patterns=$(jq -r ".[$i].negative_patterns | .[]?" "$EVAL_FILE" 2>/dev/null || echo "")
+        local eval_id=$(jq -r ".[$i].id" "$EVAL_FILE")
+        local eval_name=$(jq -r ".[$i].name" "$EVAL_FILE")
+        local eval_query=$(jq -r ".[$i].query" "$EVAL_FILE")
+        local verify_patterns=$(jq -r ".[$i].verify_patterns | .[]?" "$EVAL_FILE" 2>/dev/null || echo "")
+        local schema_addition=$(jq -r ".[$i].schema // empty" "$EVAL_FILE" 2>/dev/null || echo "")
+        local negative_patterns=$(jq -r ".[$i].negative_patterns | .[]?" "$EVAL_FILE" 2>/dev/null || echo "")
 
-        # Skip if filter provided and doesn't match
-        if [[ -n "$filter" && "$eval_id" != "$filter" && "$eval_name" != *"$filter"* ]]; then
-            ((skipped++))
+        # Filter check - partial match on id or name
+        if [[ -n "$FILTER" && "$eval_id" != *"$FILTER"* && "$eval_name" != *"$FILTER"* ]]; then
+            ((skipped++)) || true
             continue
         fi
 
-        if run_evaluation "$eval_id" "$eval_name" "$eval_query" "$verify_patterns" "$negative_patterns"; then
+        if run_evaluation "$eval_id" "$eval_name" "$eval_query" "$verify_patterns" "$schema_addition" "$negative_patterns"; then
             ((passed++))
+
+            # Read result from file: "attempt|error1|error2|..."
+            local result=$(cat "$OUTPUT_DIR/.last-result")
+            local attempt_num=$(echo "$result" | cut -d'|' -f1)
+            local errors=$(echo "$result" | cut -d'|' -f2-)
+
+            echo "PASS|$eval_id|$attempt_num|$errors" >> "$results_file"
+
+            [[ "$attempt_num" == "1" ]] && ((one_shot++))
         else
             ((failed++))
+            echo "FAIL|$eval_id" >> "$results_file"
         fi
     done
 
-    # Summary
     echo ""
     echo "============================================================"
     echo "SUMMARY"
     echo "============================================================"
-    echo -e "Passed: ${GREEN}$passed${NC}"
+    [[ $USE_SKILL -eq 1 ]] && echo -e "Mode: ${GREEN}WITH SKILL${NC}" || echo -e "Mode: ${BLUE}NO SKILL${NC}"
+    echo -e "Passed: ${GREEN}$passed${NC} / $((passed + failed))"
+    echo -e "One-shot: ${GREEN}$one_shot${NC} / $passed"
     echo -e "Failed: ${RED}$failed${NC}"
-    if [[ $skipped -gt 0 ]]; then
-        echo "Skipped: $skipped"
-    fi
-    echo ""
-    echo "Outputs saved to: $OUTPUT_DIR"
+    [[ $skipped -gt 0 ]] && echo "Skipped: $skipped"
 
-    if [[ $failed -gt 0 ]]; then
-        exit 1
-    fi
+    echo ""
+    echo "DETAILED RESULTS:"
+    echo "-----------------"
+
+    # Read results and display
+    while IFS='|' read -r status eval_id attempt_num errors; do
+        if [[ "$status" == "PASS" ]]; then
+            if [[ "$attempt_num" == "1" ]]; then
+                echo -e "${GREEN}✓${NC} $eval_id - ${GREEN}one-shot${NC}"
+            else
+                echo -e "${GREEN}✓${NC} $eval_id - attempt $attempt_num"
+                if [[ -n "$errors" ]]; then
+                    # Show retry errors
+                    local err_num=1
+                    local remaining="$errors"
+                    while [[ -n "$remaining" ]]; do
+                        local err=$(echo "$remaining" | cut -d'|' -f1)
+                        remaining=$(echo "$remaining" | cut -d'|' -f2-)
+                        [[ "$remaining" == "$err" ]] && remaining=""
+                        if [[ -n "$err" ]]; then
+                            echo -e "    ${CYAN}retry $err_num: $err${NC}"
+                            ((err_num++))
+                        fi
+                    done
+                fi
+            fi
+        elif [[ "$status" == "FAIL" ]]; then
+            echo -e "${RED}✗${NC} $eval_id - FAILED"
+            # Show errors from file
+            local suffix=$([[ $USE_SKILL -eq 0 ]] && echo "-noskill" || echo "")
+            local errors_file="$OUTPUT_DIR/$eval_id$suffix-errors.txt"
+            if [[ -f "$errors_file" ]]; then
+                while IFS= read -r line; do
+                    echo -e "    ${CYAN}$line${NC}"
+                done < "$errors_file"
+            fi
+        fi
+    done < "$results_file"
+
+    echo ""
+    echo "Outputs: $OUTPUT_DIR"
+
+    [[ $failed -gt 0 ]] && exit 1
+    exit 0
 }
 
-main "$@"
+main
