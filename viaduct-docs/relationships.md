@@ -1,7 +1,19 @@
 
 # Viaduct Node Reference Pattern (Relationships)
 
-When a field returns another Node type, use `ctx.nodeFor()`:
+When a field returns another Node type (like `createdBy: User`), **always use `ctx.nodeFor()`**:
+
+```kotlin
+// ✅ CORRECT - delegates to User's node resolver
+return ctx.nodeFor(ctx.globalIDFor(User.Reflection, createdById))
+
+// ❌ WRONG - building User directly bypasses node resolution
+return User.Builder(ctx)
+    .name("...")
+    .build()
+```
+
+**Why this matters:** `nodeFor()` delegates to Viaduct's node resolution system, enabling batching, caching, and consistent data fetching. Building objects directly bypasses this and causes inconsistent behavior.
 
 ## Schema
 

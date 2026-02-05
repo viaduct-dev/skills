@@ -20,6 +20,12 @@
 # Environment:
 #   MAX_RETRIES=3    Set max retry attempts
 #
+# Output:
+#   .eval-outputs/<eval-id>-claude.txt    Claude's final response
+#   .eval-outputs/<eval-id>-build.txt     Gradle build output
+#   .eval-outputs/<eval-id>-errors.txt    Error summary
+#   .eval-outputs/<eval-id>-workspace/    Full workspace (preserved on failure or retry)
+#
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 EVAL_FILE="$SCRIPT_DIR/evaluations.json"
@@ -284,6 +290,7 @@ Work ONLY in $WORK_DIR." \
         done
     fi
 
+    local eval_passed=0
     if [[ $build_success -eq 1 ]] && [[ $patterns_found -eq $patterns_total ]] && [[ $negative_failed -eq 0 ]]; then
         echo -e "\n  ${GREEN}✅ PASSED${NC} (attempt $attempt)"
         # Write result to file: "attempt|error1|error2|..."
@@ -292,12 +299,21 @@ Work ONLY in $WORK_DIR." \
             result="$result|$err"
         done
         echo "$result" > "$OUTPUT_DIR/.last-result"
-        return 0
+        eval_passed=1
     else
         echo -e "\n  ${RED}❌ FAILED${NC}"
         echo "FAILED" > "$OUTPUT_DIR/.last-result"
-        return 1
     fi
+
+    # Preserve workspace if failed OR not a one-shot (for debugging)
+    if [[ $eval_passed -eq 0 ]] || [[ $attempt -gt 1 ]]; then
+        local workspace_dir="$OUTPUT_DIR/$eval_id$suffix-workspace"
+        echo -e "  ${CYAN}Preserving workspace to $workspace_dir${NC}"
+        rm -rf "$workspace_dir"
+        cp -r "$WORK_DIR" "$workspace_dir"
+    fi
+
+    [[ $eval_passed -eq 1 ]] && return 0 || return 1
 }
 
 main() {
@@ -400,6 +416,15 @@ main() {
 
     echo ""
     echo "Outputs: $OUTPUT_DIR"
+
+    # List preserved workspaces
+    local workspaces=$(ls -d "$OUTPUT_DIR"/*-workspace 2>/dev/null | wc -l | tr -d ' ')
+    if [[ "$workspaces" -gt 0 ]]; then
+        echo -e "${CYAN}Preserved workspaces (failed or retried):${NC}"
+        for ws in "$OUTPUT_DIR"/*-workspace; do
+            [[ -d "$ws" ]] && echo "  $(basename "$ws")"
+        done
+    fi
 
     [[ $failed -gt 0 ]] && exit 1
     exit 0

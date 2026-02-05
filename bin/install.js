@@ -74,49 +74,17 @@ function generateIndex() {
 
 ## Viaduct Framework
 
-**⚠️ MANDATORY: Read docs AND check schema before implementing.**
+**⚠️ MANDATORY: Read the relevant doc before implementing.**
 
 | Task | Read First |
 |------|------------|
-| Mutation, input with ID field | mutations.md |
-| Query with ID argument | query-resolver.md |
-| Add computed field (@resolver) | field-resolver.md |
-| Create Node type | node-type.md |
-| Batch resolution, N+1 | batch.md |
-| Entity relationships | relationships.md |
+| Any mutation | mutations.md |
+| Any query with ID argument | query-resolver.md |
+| Field with @resolver | field-resolver.md |
+| Type with \`implements Node\` | node-type.md |
+| List field, N+1 prevention | batch.md |
+| Field returning another Node (createdBy, owner) | relationships.md |
 | Scope/visibility | scopes.md |
 
-## ⛔ BEFORE WRITING ANY CODE
-
-**Step 1: Check the schema for missing @idOf directives**
-
-Scan ALL ID fields in input types and query arguments. If any \`id: ID!\` is missing \`@idOf\`, you MUST add it:
-
-\`\`\`graphql
-# ❌ BROKEN - Missing @idOf causes "String but GlobalID expected" errors
-input UpdateTaskInput {
-  id: ID!  # <-- FIX THIS FIRST
-}
-
-# ✅ FIXED - Add @idOf to enable .internalID
-input UpdateTaskInput {
-  id: ID! @idOf(type: "Task")
-}
-\`\`\`
-
-**Step 2: Then implement the resolver using .internalID**
-
-\`\`\`kotlin
-val taskId = input.id.internalID  // Only works with @idOf
-\`\`\`
-
-## Common Error → Solution
-
-| Build Error | Solution |
-|-------------|----------|
-| Type mismatch: String but GlobalID expected | Add \`@idOf(type: "X")\` to schema |
-| internalID not a member of String | Add \`@idOf(type: "X")\` to schema |
-| Cannot convert String to GlobalID | Add \`@idOf(type: "X")\` to schema |
-
-**DO NOT work around these errors with Base64 decoding or ctx.globalIDFor() on strings. Fix the schema.**`;
+**⚠️ @idOf CHECK:** Before implementing, scan schema for \`id: ID!\` in input types and query args. If missing \`@idOf\`, add it first. See mutations.md or query-resolver.md.`;
 }

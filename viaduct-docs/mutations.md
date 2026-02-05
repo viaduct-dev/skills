@@ -1,6 +1,24 @@
 
 # Viaduct Mutation Pattern
 
+## ⛔ BEFORE IMPLEMENTING: Check Schema for @idOf
+
+**First, check if input types have `@idOf` on ID fields.** If missing, add it:
+
+```graphql
+# ❌ BROKEN - Missing @idOf
+input UpdateTaskInput {
+  id: ID!
+}
+
+# ✅ FIXED - Add @idOf
+input UpdateTaskInput {
+  id: ID! @idOf(type: "Task")
+}
+```
+
+Without `@idOf`, `input.id` returns a raw base64 string instead of a GlobalID. Use `.internalID` to extract the UUID.
+
 ## Schema
 
 ```graphql

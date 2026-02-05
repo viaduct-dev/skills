@@ -66,11 +66,30 @@ import com.viaduct.resolvers.resolverbases.MutationResolvers
 import com.viaduct.resolvers.resolverbases.TypeResolvers
 ```
 
+## Node Type + Query = Two Resolvers
+
+When a type `implements Node` AND has a query to fetch it by ID, you need **BOTH** resolvers:
+
+```kotlin
+// 1. NodeResolver - handles Relay node(id: ID!) interface
+class TagNodeResolver : NodeResolvers.Tag() {
+    override suspend fun resolve(ctx: Context): Tag { ... }
+}
+
+// 2. QueryResolver - handles your specific query
+class TagQueryResolver : QueryResolvers.Tag() {
+    override suspend fun resolve(ctx: Context): Tag? { ... }
+}
+```
+
+**Both are required.** Don't skip the NodeResolver - it's needed for the Relay node interface.
+
 ## Checklist
 
 1. Type has `implements Node`
 2. Type has `@resolver` directive
 3. Type has `@scope(to: ["default"])`
 4. Type has `id: ID!` field
-5. Resolver extends `NodeResolvers.TypeName()`
-6. Import from `resolverbases` subpackage
+5. Create `NodeResolvers.TypeName()` resolver
+6. If query exists, also create `QueryResolvers.TypeName()` resolver
+7. Import NodeResolvers from correct package (no `resolverbases`)

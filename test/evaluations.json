@@ -140,7 +140,7 @@
     "verify_patterns": [
       "@idOf\\(type: \"Task\"\\)",
       "MutationResolvers.UpdateTask",
-      "input\\.id"
+      "internalID"
     ],
     "negative_patterns": [
       "Base64\\.getDecoder",
@@ -163,7 +163,7 @@
     "verify_patterns": [
       "project\\(id: ID! @idOf\\(type: \"Project\"\\)\\)",
       "QueryResolvers.Project",
-      "ctx\\.arguments\\.id"
+      "internalID"
     ],
     "negative_patterns": [
       "Base64\\.getDecoder",
