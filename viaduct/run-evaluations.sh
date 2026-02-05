@@ -143,13 +143,66 @@ run_evaluation() {
     export SUPABASE_ANON_KEY="sb_publishable_ACJWlzQHlZjBrEguHvfOxg_3BJgxAaH"
     export SUPABASE_SERVICE_ROLE_KEY="sb_secret_N7UND0UgjKTVK-Uodkm0Hg_xSvEMPvz"
 
+    # Build skill context by reading SKILL.md and key resources
+    echo "  Loading skill documentation..."
+    local skill_context=""
+
+    # Read SKILL.md (skip frontmatter)
+    if [[ -f "$work_dir/.claude/skills/viaduct/SKILL.md" ]]; then
+        skill_context="$(sed '1,/^---$/d; 1,/^---$/d' "$work_dir/.claude/skills/viaduct/SKILL.md")"
+    fi
+
+    # Read key resource files based on eval type
+    local resources_dir="$work_dir/.claude/skills/viaduct/resources"
+    if [[ -d "$resources_dir" ]]; then
+        # Always include entities and globalid docs
+        for doc in "$resources_dir/core/entities.md" "$resources_dir/gotchas/global-ids.md"; do
+            if [[ -f "$doc" ]]; then
+                skill_context="$skill_context
+
+---
+$(cat "$doc")"
+            fi
+        done
+
+        # Include relevant docs based on query content
+        if echo "$eval_query" | grep -qi "mutation"; then
+            [[ -f "$resources_dir/core/mutations.md" ]] && skill_context="$skill_context
+
+---
+$(cat "$resources_dir/core/mutations.md")"
+        fi
+        if echo "$eval_query" | grep -qi "scope\|admin"; then
+            [[ -f "$resources_dir/core/scopes.md" ]] && skill_context="$skill_context
+
+---
+$(cat "$resources_dir/core/scopes.md")"
+        fi
+        if echo "$eval_query" | grep -qi "relationship\|createdBy\|nodeFor"; then
+            [[ -f "$resources_dir/core/relationships.md" ]] && skill_context="$skill_context
+
+---
+$(cat "$resources_dir/core/relationships.md")"
+        fi
+        if echo "$eval_query" | grep -qi "batch"; then
+            [[ -f "$resources_dir/core/queries.md" ]] && skill_context="$skill_context
+
+---
+$(cat "$resources_dir/core/queries.md")"
+        fi
+    fi
+
     # Initial Claude run
     echo "  Running Claude with skill (attempt 1/$MAX_RETRIES)..."
     echo "  Query: ${eval_query:0:60}..."
 
-    local full_query="/viaduct
+    local full_query="<viaduct-skill-documentation>
+$skill_context
+</viaduct-skill-documentation>
 
-IMPORTANT: Work ONLY in the current directory ($work_dir). Do NOT search or reference any other directories. Implement the following in this workspace:
+IMPORTANT: Work ONLY in the current directory ($work_dir). Do NOT search or reference any other directories.
+
+Follow the Viaduct patterns shown in the skill documentation above. Implement the following in this workspace:
 
 $eval_query"
 
