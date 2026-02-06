@@ -1,0 +1,16 @@
+{
+  "name": "@viaduct-dev/skills",
+  "version": "0.1.0",
+  "description": "Viaduct skill documentation for AI coding agents",
+  "bin": {
+    "viaduct-skills": "./bin/install.js"
+  },
+  "files": [
+    "bin/",
+    "skills/"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/viaduct-dev/skills.git"
+  }
+}
