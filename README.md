@@ -21,6 +21,8 @@ This will:
 
 The task mapping tells Claude which doc to read before implementing each type of task.
 
+**This is the most reliable method based on evaluation testing** — it achieved 100% pass rate compared to 40% without skills.
+
 ### Option 2: Micro-Skills via skills.sh
 
 Install all Viaduct skills using the [skills.sh](https://skills.sh) CLI:
