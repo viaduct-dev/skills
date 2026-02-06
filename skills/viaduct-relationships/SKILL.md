@@ -1,3 +1,8 @@
+---
+name: viaduct-relationships
+description: |
+  Viaduct Node reference pattern for relationships. Use when a field returns another Node type (like createdBy: User), to properly delegate fetching via ctx.nodeFor().
+---
 
 # Viaduct Node Reference Pattern (Relationships)
 

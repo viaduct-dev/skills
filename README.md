@@ -4,6 +4,10 @@ Documentation for AI coding agents working with the Viaduct GraphQL framework.
 
 ## Installation
 
+There are two ways to install Viaduct skills:
+
+### Option 1: AGENTS.md Integration (Recommended)
+
 Run from your Viaduct project root:
 
 ```bash
@@ -11,45 +15,44 @@ npx @viaduct-dev/skills
 ```
 
 This will:
-1. Copy documentation files to `.viaduct-docs/`
+1. Copy documentation files to `.viaduct/agents/`
 2. Add a task-to-doc mapping to your `AGENTS.md` (or `CLAUDE.md`)
 3. Update `.gitignore` to exclude the generated docs
 
-## What's Included
+The task mapping tells Claude which doc to read before implementing each type of task.
 
-| Doc | When to Read |
-|-----|--------------|
-| mutations.md | Any mutation |
-| query-resolver.md | Any query with ID argument |
-| field-resolver.md | Field with @resolver |
-| node-type.md | Type with `implements Node` |
-| batch.md | List field, N+1 prevention |
-| relationships.md | Field returning another Node (createdBy, owner) |
-| scopes.md | Scope/visibility |
+### Option 2: Micro-Skills via skills.sh
 
-## Development
-
-### Running Evaluations
-
-The `test/` directory contains an evaluation harness to test skill effectiveness:
+Install all Viaduct skills using the [skills.sh](https://skills.sh) CLI:
 
 ```bash
-cd test
-./run-evaluations.sh              # Run all evaluations
-./run-evaluations.sh eval-01      # Run specific evaluation
-./run-evaluations.sh --no-skill   # Run without skills (baseline)
+npx skills add viaduct-dev/viaduct-skills
 ```
 
-Evaluations test whether Claude correctly implements Viaduct patterns when given the skill documentation.
+This installs all micro-skills from the `skills/` directory. Each skill is triggered automatically based on task context.
 
-### Project Structure
+**Manual installation for Claude Code:**
 
+```bash
+cp -r skills/* ~/.claude/skills/
 ```
-├── bin/install.js       # npx installer
-├── viaduct-docs/        # Documentation files
-├── viaduct-*/           # Micro-skill definitions (for skill triggers)
-└── test/                # Evaluation harness
-    ├── evaluations.json # Evaluation definitions
-    ├── run-evaluations.sh
-    └── base-template/   # Template project for evals
-```
+
+**For claude.ai:**
+
+Add individual skill files to project knowledge, or paste SKILL.md contents into the conversation.
+
+## What's Included
+
+| Skill / Doc | When Used |
+|-------------|-----------|
+| viaduct-mutations | Any mutation, CRUD operations, `@idOf` in input types |
+| viaduct-query-resolver | Any query with ID argument |
+| viaduct-field-resolver | Field with `@resolver` directive |
+| viaduct-node-type | Type with `implements Node` |
+| viaduct-batch | List field, N+1 prevention |
+| viaduct-relationships | Field returning another Node (createdBy, owner) |
+| viaduct-scopes | Scope/visibility configuration |
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup and running evaluations.

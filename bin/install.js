@@ -3,30 +3,50 @@
 const fs = require('fs');
 const path = require('path');
 
-const DOCS_DIR = '.viaduct-docs';
+const DOCS_DIR = '.viaduct/agents';
 const START_MARKER = '<!-- VIADUCT-AGENTS-MD-START -->';
 const END_MARKER = '<!-- VIADUCT-AGENTS-MD-END -->';
 
+// Map skill directory names to output file names
+const SKILL_MAP = {
+  'viaduct-mutations': 'mutations.md',
+  'viaduct-query-resolver': 'query-resolver.md',
+  'viaduct-field-resolver': 'field-resolver.md',
+  'viaduct-node-type': 'node-type.md',
+  'viaduct-batch': 'batch.md',
+  'viaduct-relationships': 'relationships.md',
+  'viaduct-scopes': 'scopes.md',
+};
+
 // Get the directory where this package is installed
 const packageDir = path.dirname(__dirname);
-const sourceDocsDir = path.join(packageDir, 'viaduct-docs');
+const skillsDir = path.join(packageDir, 'skills');
 const cwd = process.cwd();
 
 console.log('Installing Viaduct documentation...\n');
 
-// 1. Create .viaduct-docs/ directory
+// 1. Create .viaduct/agents/ directory
 const targetDocsDir = path.join(cwd, DOCS_DIR);
 if (!fs.existsSync(targetDocsDir)) {
   fs.mkdirSync(targetDocsDir, { recursive: true });
 }
 
-// 2. Copy docs
-const docFiles = fs.readdirSync(sourceDocsDir).filter(f => f.endsWith('.md'));
-for (const file of docFiles) {
-  const src = path.join(sourceDocsDir, file);
-  const dest = path.join(targetDocsDir, file);
-  fs.copyFileSync(src, dest);
-  console.log(`  Copied ${file}`);
+// 2. Copy docs from skills/*/SKILL.md, stripping YAML frontmatter
+for (const [skillDir, outputFile] of Object.entries(SKILL_MAP)) {
+  const srcPath = path.join(skillsDir, skillDir, 'SKILL.md');
+  const destPath = path.join(targetDocsDir, outputFile);
+
+  if (fs.existsSync(srcPath)) {
+    let content = fs.readFileSync(srcPath, 'utf-8');
+
+    // Strip YAML frontmatter (---\n...\n---)
+    content = content.replace(/^---\n[\s\S]*?\n---\n*/, '');
+
+    fs.writeFileSync(destPath, content);
+    console.log(`  Copied ${outputFile}`);
+  } else {
+    console.log(`  Warning: ${srcPath} not found`);
+  }
 }
 
 // 3. Generate index with task mapping table

@@ -154,16 +154,6 @@ run_evaluation() {
     # Clear errors file
     > "$errors_file"
 
-    # Get auth token
-    echo "  Getting IAP auth token..."
-    local auth_token
-    auth_token=$(iap-auth https://devaigateway.a.musta.ch 2>/dev/null)
-    if [[ -z "$auth_token" ]]; then
-        echo -e "  ${RED}Failed to get IAP auth token${NC}"
-        echo "AUTH_FAILED" >> "$errors_file"
-        return 1
-    fi
-
     # Build query - remove skill reference if no-skill mode
     local full_query
     if [[ $USE_SKILL -eq 1 ]]; then
@@ -180,14 +170,35 @@ $clean_query"
 
     echo "  Running Claude (attempt 1/$MAX_RETRIES)..."
 
-    CLAUDE_CODE_USE_BEDROCK=1 \
-    ANTHROPIC_BEDROCK_BASE_URL="https://devaigateway.a.musta.ch/bedrock" \
-    CLAUDE_CODE_SKIP_BEDROCK_AUTH=1 \
-    ANTHROPIC_AUTH_TOKEN="$auth_token" \
-    claude -p "$full_query" \
-          --dangerously-skip-permissions \
-          --no-session-persistence \
-          "$WORK_DIR" > "$claude_output" 2>&1 || true
+    # Support both standard Anthropic API and Airbnb internal gateway
+    if [[ -n "$ANTHROPIC_API_KEY" ]]; then
+        # Standard Anthropic API - just run claude directly
+        claude -p "$full_query" \
+              --dangerously-skip-permissions \
+              --no-session-persistence \
+              "$WORK_DIR" > "$claude_output" 2>&1 || true
+    elif command -v iap-auth &>/dev/null; then
+        # Airbnb internal: use IAP auth with Bedrock gateway
+        local auth_token
+        auth_token=$(iap-auth https://devaigateway.a.musta.ch 2>/dev/null)
+        if [[ -z "$auth_token" ]]; then
+            echo -e "  ${RED}Failed to get IAP auth token${NC}"
+            echo "AUTH_FAILED" >> "$errors_file"
+            return 1
+        fi
+        CLAUDE_CODE_USE_BEDROCK=1 \
+        ANTHROPIC_BEDROCK_BASE_URL="https://devaigateway.a.musta.ch/bedrock" \
+        CLAUDE_CODE_SKIP_BEDROCK_AUTH=1 \
+        ANTHROPIC_AUTH_TOKEN="$auth_token" \
+        claude -p "$full_query" \
+              --dangerously-skip-permissions \
+              --no-session-persistence \
+              "$WORK_DIR" > "$claude_output" 2>&1 || true
+    else
+        echo -e "  ${RED}No authentication configured. Set ANTHROPIC_API_KEY or use iap-auth.${NC}"
+        echo "AUTH_FAILED" >> "$errors_file"
+        return 1
+    fi
 
     # Build and fix loop
     local build_success=0
@@ -216,19 +227,29 @@ $clean_query"
             if [[ $attempt -lt $MAX_RETRIES ]]; then
                 echo "  Letting Claude fix..."
                 local build_error=$(tail -50 "$build_output")
-
-                CLAUDE_CODE_USE_BEDROCK=1 \
-                ANTHROPIC_BEDROCK_BASE_URL="https://devaigateway.a.musta.ch/bedrock" \
-                CLAUDE_CODE_SKIP_BEDROCK_AUTH=1 \
-                ANTHROPIC_AUTH_TOKEN="$auth_token" \
-                claude -p "Build failed. Fix it:
+                local fix_query="Build failed. Fix it:
 \`\`\`
 $build_error
 \`\`\`
-Work ONLY in $WORK_DIR." \
-                      --dangerously-skip-permissions \
-                      --no-session-persistence \
-                      "$WORK_DIR" >> "$claude_output" 2>&1 || true
+Work ONLY in $WORK_DIR."
+
+                if [[ -n "$ANTHROPIC_API_KEY" ]]; then
+                    claude -p "$fix_query" \
+                          --dangerously-skip-permissions \
+                          --no-session-persistence \
+                          "$WORK_DIR" >> "$claude_output" 2>&1 || true
+                elif command -v iap-auth &>/dev/null; then
+                    local auth_token
+                    auth_token=$(iap-auth https://devaigateway.a.musta.ch 2>/dev/null)
+                    CLAUDE_CODE_USE_BEDROCK=1 \
+                    ANTHROPIC_BEDROCK_BASE_URL="https://devaigateway.a.musta.ch/bedrock" \
+                    CLAUDE_CODE_SKIP_BEDROCK_AUTH=1 \
+                    ANTHROPIC_AUTH_TOKEN="$auth_token" \
+                    claude -p "$fix_query" \
+                          --dangerously-skip-permissions \
+                          --no-session-persistence \
+                          "$WORK_DIR" >> "$claude_output" 2>&1 || true
+                fi
             fi
         fi
         ((attempt++))

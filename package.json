@@ -7,7 +7,7 @@
   },
   "files": [
     "bin/",
-    "viaduct-docs/"
+    "skills/"
   ],
   "repository": {
     "type": "git",

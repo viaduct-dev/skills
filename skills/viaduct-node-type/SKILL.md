@@ -1,3 +1,8 @@
+---
+name: viaduct-node-type
+description: |
+  Viaduct Node type pattern. Use when creating types that implement the Node interface, or when working with NodeResolvers for Relay-style node fetching.
+---
 
 # Viaduct Node Type Pattern
 

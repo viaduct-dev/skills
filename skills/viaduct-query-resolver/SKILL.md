@@ -1,30 +1,48 @@
 ---
 name: viaduct-query-resolver
 description: |
-  Viaduct query resolver pattern. Use when adding Query fields, fetching entities by ID, using @idOf directive, or implementing QueryResolvers.
+  Viaduct query resolver pattern. Use when implementing queries that fetch entities by ID or list queries, or when using QueryResolvers base classes.
 ---
 
 # Viaduct Query Resolver Pattern
 
-Add query fields using `extend type Query`:
+## ⛔ BEFORE IMPLEMENTING: Check Schema for @idOf
+
+**First, check if the query argument has `@idOf`.** If missing, add it:
+
+```graphql
+# ❌ BROKEN - Missing @idOf
+extend type Query {
+  project(id: ID!): Project @resolver
+}
+
+# ✅ FIXED - Add @idOf
+extend type Query {
+  project(id: ID! @idOf(type: "Project")): Project @resolver
+}
+```
+
+## Why @idOf Matters
+
+Without `@idOf`, `ctx.arguments.id` returns the raw base64 GlobalID string (e.g., `"UHJvamVjdDo1NTBlODQwMC4uLg=="`), NOT the actual UUID.
+
+```kotlin
+// ❌ BUG - gets base64 string, not UUID
+val projectId = ctx.arguments.id  // "UHJvamVjdDo1NTBlODQwMC4uLg=="
+
+// ✅ CORRECT - extracts actual UUID
+val projectId = ctx.arguments.id.internalID  // "550e8400-e29b-41d4-a716-446655440000"
+```
+
+**This causes real bugs:** Database lookups fail and response IDs get corrupted.
+
+## Schema Pattern
 
 ```graphql
 extend type Query @scope(to: ["default"]) {
   user(id: ID! @idOf(type: "User")): User @resolver
   users: [User!]! @resolver
 }
-```
-
-## @idOf Directive
-
-**Always use `@idOf` on ID arguments** - it deserializes GlobalID automatically:
-
-```graphql
-# ✅ CORRECT - @idOf enables .internalID
-user(id: ID! @idOf(type: "User")): User @resolver
-
-# ❌ WRONG - without @idOf, id is just a String
-user(id: ID!): User @resolver
 ```
 
 ## Resolver Implementation
