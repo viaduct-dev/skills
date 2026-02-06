@@ -98,7 +98,7 @@ function generateIndex() {
 
 | Task | Read First |
 |------|------------|
-| Any mutation | mutations.md |
+| When authoring any mutation | mutations.md |
 | Any query with ID argument | query-resolver.md |
 | Field with @resolver | field-resolver.md |
 | Type with \`implements Node\` | node-type.md |
