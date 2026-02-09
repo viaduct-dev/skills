@@ -11,6 +11,14 @@ There are two ways to install Viaduct skills:
 Run from your Viaduct project root:
 
 ```bash
+curl -fsSL https://raw.githubusercontent.com/viaduct-dev/skills/main/bin/install.sh | bash -s -- myapp
+```
+
+Replace `myapp` with your project name.
+
+Or, if you have Node.js installed:
+
+```bash
 npx @viaduct-dev/skills
 ```
 
