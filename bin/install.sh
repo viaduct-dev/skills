@@ -33,13 +33,20 @@ echo
 # 1. Create .viaduct/agents/ directory
 mkdir -p "$DOCS_DIR"
 
-# 2. Download docs from GitHub using gh api (works with private repos)
+# 2. Download docs from GitHub (try curl first, fall back to gh api for private repos)
+SKILLS_BASE_URL="https://raw.githubusercontent.com/viaduct-dev/skills/main/skills"
+
 for skill_dir in "${!SKILL_MAP[@]}"; do
   output_file="${SKILL_MAP[$skill_dir]}"
+  url="$SKILLS_BASE_URL/$skill_dir/SKILL.md"
   api_path="repos/viaduct-dev/skills/contents/skills/$skill_dir/SKILL.md"
 
-  if content=$(gh api "$api_path" --jq '.content' 2>/dev/null | base64 -d); then
-    # Strip YAML frontmatter (---\n...\n---)
+  # Try curl first (works if repo is public)
+  if content=$(curl -fsSL "$url" 2>/dev/null); then
+    echo "$content" | sed '/^---$/,/^---$/d' > "$DOCS_DIR/$output_file"
+    echo "  Downloaded $output_file"
+  # Fall back to gh api (works for private repo)
+  elif content=$(gh api "$api_path" --jq '.content' 2>/dev/null | base64 -d); then
     echo "$content" | sed '/^---$/,/^---$/d' > "$DOCS_DIR/$output_file"
     echo "  Downloaded $output_file"
   else
