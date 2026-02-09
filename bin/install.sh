@@ -16,8 +16,6 @@ PROJECT_NAME="${1:-myapp}"
 DOCS_DIR=".viaduct/agents"
 START_MARKER="<!-- VIADUCT-AGENTS-MD-START -->"
 END_MARKER="<!-- VIADUCT-AGENTS-MD-END -->"
-SKILLS_BASE_URL="https://raw.githubusercontent.com/viaduct-dev/skills/main/skills"
-
 # Skill directory -> output file mapping
 declare -A SKILL_MAP=(
   ["viaduct-mutations"]="mutations.md"
@@ -35,12 +33,12 @@ echo
 # 1. Create .viaduct/agents/ directory
 mkdir -p "$DOCS_DIR"
 
-# 2. Download docs from GitHub, stripping YAML frontmatter
+# 2. Download docs from GitHub using gh api (works with private repos)
 for skill_dir in "${!SKILL_MAP[@]}"; do
   output_file="${SKILL_MAP[$skill_dir]}"
-  url="$SKILLS_BASE_URL/$skill_dir/SKILL.md"
+  api_path="repos/viaduct-dev/skills/contents/skills/$skill_dir/SKILL.md"
 
-  if content=$(curl -fsSL "$url" 2>/dev/null); then
+  if content=$(gh api "$api_path" --jq '.content' 2>/dev/null | base64 -d); then
     # Strip YAML frontmatter (---\n...\n---)
     echo "$content" | sed '/^---$/,/^---$/d' > "$DOCS_DIR/$output_file"
     echo "  Downloaded $output_file"
