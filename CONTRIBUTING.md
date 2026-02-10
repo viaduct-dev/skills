@@ -4,7 +4,9 @@
 
 - Node.js 18+
 - Java 17+
-- [Claude CLI](https://github.com/anthropics/claude-code) (`npm install -g @anthropic-ai/claude-code`)
+- AI CLI (one of):
+  - [Claude CLI](https://github.com/anthropics/claude-code) (`npm install -g @anthropic-ai/claude-code`) - default backend
+  - [Crush](https://github.com/charmbracelet/crush) (`brew install charmbracelet/tap/crush`) - lightweight alternative
 - jq (`brew install jq` on macOS)
 
 ## Authentication
@@ -27,7 +29,8 @@ The `test/` directory contains an evaluation harness to test skill effectiveness
 
 ```bash
 cd test
-./run-evaluations.sh              # Run all evaluations (parallel)
+./run-evaluations.sh              # Run all evaluations (parallel, Claude CLI)
+./run-evaluations.sh --crush      # Run with Crush backend (lower memory)
 ./run-evaluations.sh eval-01      # Run specific evaluation
 ./run-evaluations.sh --no-skill   # Run without skills (baseline)
 ./run-evaluations.sh --parallel=6 # Run 6 evaluations concurrently
@@ -40,8 +43,11 @@ cd test
 |--------|-------------|
 | `--skill` | Run with skill documentation (default) |
 | `--no-skill` | Run without skills for baseline comparison |
-| `--parallel=N` | Run N evaluations concurrently (default: 4) |
+| `--parallel=N` | Run N evaluations concurrently (default: 4 for Claude, 10 for Crush) |
 | `--sequential` | Run evaluations one at a time |
+| `--backend=X` | Use `claude` (default) or `crush` as the AI backend |
+| `--crush` | Shorthand for `--backend=crush` |
+| `--claude` | Shorthand for `--backend=claude` |
 | `<eval-id>` | Filter to run specific evaluation(s) |
 
 ### Environment Variables
@@ -50,21 +56,30 @@ cd test
 |----------|---------|-------------|
 | `ANTHROPIC_API_KEY` | - | Anthropic API key for Claude access |
 | `MAX_RETRIES` | 3 | Max build/fix retry attempts |
-| `MAX_PARALLEL` | 4 | Max concurrent evaluations |
+| `MAX_PARALLEL` | 4/10 | Max concurrent evaluations (4 for Claude, 10 for Crush) |
+| `BACKEND` | claude | AI backend to use (`claude` or `crush`) |
+
+### AI Backends
+
+The harness supports two AI backends:
+
+| Backend | Memory/Process | Default Parallelism | Install |
+|---------|---------------|---------------------|---------|
+| Claude CLI | ~800 MB | 4 | `npm install -g @anthropic-ai/claude-code` |
+| Crush | ~165 MB | 10 | `brew install charmbracelet/tap/crush` |
+
+**Crush** is a lightweight Go-based AI coding assistant that uses ~80% less memory than Claude CLI, enabling higher parallelism on the same hardware.
 
 ### Performance & Resource Usage
 
-Each parallel evaluation spawns a Claude CLI process. Resource requirements:
+| Backend | Parallelism | Memory | Wall Time (10 evals) |
+|---------|-------------|--------|----------------------|
+| Claude CLI | 1 (sequential) | ~800 MB | ~28 min |
+| Claude CLI | 4 | ~3.2 GB | ~8 min |
+| Claude CLI | 6 | ~4.8 GB | ~6 min |
+| Crush | 10 | ~1.6 GB | ~4.5 min |
 
-| Parallelism | Memory | Wall Time (10 evals) |
-|-------------|--------|----------------------|
-| 1 (sequential) | ~800 MB | ~28 min |
-| 4 | ~3.2 GB | ~8 min |
-| 6 | ~4.8 GB | ~6 min |
-
-**Memory per thread: ~800 MB**
-
-The harness pre-warms the Gradle daemon and uses unique workspaces per evaluation to enable safe parallel execution. Both `--skill` and `--no-skill` modes can run simultaneously without conflicts.
+The harness pre-warms the Gradle daemon and uses unique workspaces per evaluation to enable safe parallel execution. Different backends and modes can run simultaneously without conflicts.
 
 ### Output
 
@@ -72,10 +87,12 @@ Evaluation outputs are saved to `test/.eval-outputs/`:
 
 | File | Description |
 |------|-------------|
-| `<eval-id>-claude.txt` | Claude's responses |
+| `<eval-id>-agent.txt` | AI agent's responses |
 | `<eval-id>-build.txt` | Gradle build output |
 | `<eval-id>-errors.txt` | Error summary |
 | `<eval-id>-workspace/` | Full workspace (preserved on failure or retry) |
+
+Files include backend suffix (e.g., `-crush`) when using non-default backend.
 
 ## Adding Evaluations
 

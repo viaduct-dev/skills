@@ -7,7 +7,7 @@
 #   1. Copies base-template to unique temp directory
 #   2. Appends eval-specific schema types
 #   3. Runs Gradle to generate scaffolding
-#   4. Runs Claude to implement the feature
+#   4. Runs AI agent (Claude CLI or Crush) to implement the feature
 #   5. Builds and verifies patterns
 #
 # Usage:
@@ -18,16 +18,22 @@
 #   --skill         Run with the viaduct skill (default)
 #   --parallel=N    Run N evaluations in parallel (default: 4)
 #   --sequential    Run evaluations one at a time (--parallel=1)
+#   --backend=X     Use 'claude' (default) or 'crush' as the AI backend
 #
 # Environment:
 #   MAX_RETRIES=3       Set max retry attempts
-#   MAX_PARALLEL=4      Set max parallel evaluations
+#   MAX_PARALLEL=4      Set max parallel evaluations (default: 4 for claude, 10 for crush)
 #
 # Output:
-#   .eval-outputs/<eval-id>-claude.txt    Claude's final response
+#   .eval-outputs/<eval-id>-agent.txt     Agent's final response
 #   .eval-outputs/<eval-id>-build.txt     Gradle build output
 #   .eval-outputs/<eval-id>-errors.txt    Error summary
 #   .eval-outputs/<eval-id>-workspace/    Full workspace (preserved on failure or retry)
+#
+# Backends:
+#   claude  - Claude CLI (~800 MB/process, requires claude CLI)
+#   crush   - Charmbracelet Crush (~165 MB/process, requires crush CLI)
+#             Crush requires: CATWALK_URL=http://localhost:1 to use cached providers
 #
 
 set -o pipefail
@@ -42,7 +48,8 @@ WORK_BASE="/tmp/viaduct-skill-eval"
 USE_SKILL=1
 FILTER=""
 MAX_RETRIES="${MAX_RETRIES:-3}"
-MAX_PARALLEL="${MAX_PARALLEL:-4}"
+BACKEND="${BACKEND:-claude}"
+# MAX_PARALLEL default depends on backend (set after parsing args)
 
 # Colors
 RED='\033[0;31m'
@@ -53,6 +60,7 @@ CYAN='\033[0;36m'
 NC='\033[0m'
 
 # Parse arguments
+EXPLICIT_PARALLEL=""
 while [[ $# -gt 0 ]]; do
     case $1 in
         --no-skill)
@@ -64,11 +72,23 @@ while [[ $# -gt 0 ]]; do
             shift
             ;;
         --parallel=*)
-            MAX_PARALLEL="${1#*=}"
+            EXPLICIT_PARALLEL="${1#*=}"
             shift
             ;;
         --sequential)
-            MAX_PARALLEL=1
+            EXPLICIT_PARALLEL=1
+            shift
+            ;;
+        --backend=*)
+            BACKEND="${1#*=}"
+            shift
+            ;;
+        --crush)
+            BACKEND="crush"
+            shift
+            ;;
+        --claude)
+            BACKEND="claude"
             shift
             ;;
         *)
@@ -78,14 +98,31 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
+# Set MAX_PARALLEL based on backend (crush uses less memory, can run more parallel)
+if [[ -n "$EXPLICIT_PARALLEL" ]]; then
+    MAX_PARALLEL="$EXPLICIT_PARALLEL"
+elif [[ -n "$MAX_PARALLEL" ]]; then
+    : # Use environment variable
+elif [[ "$BACKEND" == "crush" ]]; then
+    MAX_PARALLEL=10
+else
+    MAX_PARALLEL=4
+fi
+
 mkdir -p "$OUTPUT_DIR"
 
 check_deps() {
     local missing=0
     command -v jq &>/dev/null || { echo -e "${RED}Error: jq required${NC}"; missing=1; }
-    command -v claude &>/dev/null || { echo -e "${RED}Error: claude CLI required${NC}"; missing=1; }
     command -v java &>/dev/null || { echo -e "${RED}Error: java 17+ required${NC}"; missing=1; }
     [[ ! -d "$BASE_TEMPLATE" ]] && { echo -e "${RED}Error: base-template not found at $BASE_TEMPLATE${NC}"; missing=1; }
+
+    if [[ "$BACKEND" == "crush" ]]; then
+        command -v crush &>/dev/null || { echo -e "${RED}Error: crush CLI required (brew install charmbracelet/tap/crush)${NC}"; missing=1; }
+    else
+        command -v claude &>/dev/null || { echo -e "${RED}Error: claude CLI required${NC}"; missing=1; }
+    fi
+
     [[ $missing -eq 1 ]] && exit 1
 }
 
@@ -144,6 +181,123 @@ setup_project() {
     return 0
 }
 
+# Setup Crush environment (configure providers for internal gateway)
+setup_crush_providers() {
+    # Crush auto-updates providers from remote, which overwrites local changes.
+    # We need to modify the cached providers.json to use gateway model IDs.
+    local providers_file="$HOME/.local/share/crush/providers.json"
+
+    if [[ ! -f "$providers_file" ]]; then
+        echo -e "${YELLOW}Warning: Crush providers.json not found, running crush once to initialize...${NC}"
+        CATWALK_URL="http://localhost:1" crush models > /dev/null 2>&1 || true
+    fi
+
+    if [[ -f "$providers_file" ]]; then
+        # Update Anthropic provider model IDs to match gateway format
+        python3 << 'PYEOF' 2>/dev/null || true
+import json, os
+
+filepath = os.path.expanduser('~/.local/share/crush/providers.json')
+if not os.path.exists(filepath):
+    exit(0)
+
+with open(filepath, 'r') as f:
+    data = json.load(f)
+
+modified = False
+for provider in data:
+    if provider.get('id') == 'anthropic':
+        for model in provider.get('models', []):
+            old_id = model['id']
+            if not old_id.startswith('global.'):
+                model['id'] = f"global.anthropic.{old_id}-v1:0"
+                modified = True
+        if not provider.get('default_large_model_id', '').startswith('global.'):
+            provider['default_large_model_id'] = 'global.anthropic.claude-sonnet-4-5-20250929-v1:0'
+            provider['default_small_model_id'] = 'global.anthropic.claude-haiku-4-5-20251001-v1:0'
+            modified = True
+        break
+
+if modified:
+    with open(filepath, 'w') as f:
+        json.dump(data, f, separators=(',', ':'))
+PYEOF
+    fi
+}
+
+# Run prompt with Claude CLI
+run_with_claude() {
+    local work_dir="$1"
+    local prompt="$2"
+    local output_file="$3"
+
+    if [[ -n "$ANTHROPIC_API_KEY" ]]; then
+        claude -p "$prompt" \
+              --dangerously-skip-permissions \
+              --no-session-persistence \
+              "$work_dir" >> "$output_file" 2>&1 || true
+    elif command -v iap-auth &>/dev/null; then
+        local auth_token
+        auth_token=$(iap-auth https://devaigateway.a.musta.ch 2>/dev/null)
+        if [[ -z "$auth_token" ]]; then
+            return 1
+        fi
+        CLAUDE_CODE_USE_BEDROCK=1 \
+        ANTHROPIC_BEDROCK_BASE_URL="https://devaigateway.a.musta.ch/bedrock" \
+        CLAUDE_CODE_SKIP_BEDROCK_AUTH=1 \
+        ANTHROPIC_AUTH_TOKEN="$auth_token" \
+        claude -p "$prompt" \
+              --dangerously-skip-permissions \
+              --no-session-persistence \
+              "$work_dir" >> "$output_file" 2>&1 || true
+    else
+        return 1
+    fi
+    return 0
+}
+
+# Run prompt with Crush
+run_with_crush() {
+    local work_dir="$1"
+    local prompt="$2"
+    local output_file="$3"
+
+    local auth_token=""
+    if [[ -n "$ANTHROPIC_API_KEY" ]]; then
+        auth_token="$ANTHROPIC_API_KEY"
+    elif command -v iap-auth &>/dev/null; then
+        auth_token=$(iap-auth https://devaigateway.a.musta.ch 2>/dev/null)
+    fi
+
+    if [[ -z "$auth_token" ]]; then
+        return 1
+    fi
+
+    # Run Crush with gateway configuration
+    # CATWALK_URL blocks remote provider fetch, using our modified local providers
+    (
+        cd "$work_dir"
+        ANTHROPIC_API_KEY="$auth_token" \
+        ANTHROPIC_API_ENDPOINT="https://devaigateway.a.musta.ch" \
+        CATWALK_URL="http://localhost:1" \
+        crush run "$prompt" >> "$output_file" 2>&1
+    ) || true
+    return 0
+}
+
+# Run prompt with selected backend
+run_agent() {
+    local work_dir="$1"
+    local prompt="$2"
+    local output_file="$3"
+
+    if [[ "$BACKEND" == "crush" ]]; then
+        run_with_crush "$work_dir" "$prompt" "$output_file"
+    else
+        run_with_claude "$work_dir" "$prompt" "$output_file"
+    fi
+}
+
 # Extract the key error from build output
 extract_error_summary() {
     local build_output="$1"
@@ -174,13 +328,14 @@ run_evaluation() {
     local negative_patterns="$6"
 
     local suffix=$([[ $USE_SKILL -eq 0 ]] && echo "-noskill" || echo "")
+    local backend_suffix=$([[ "$BACKEND" == "crush" ]] && echo "-crush" || echo "")
 
     # Unique workspace for this evaluation (includes suffix to avoid conflicts)
-    local work_dir="$WORK_BASE-$eval_id$suffix"
-    local claude_output="$OUTPUT_DIR/$eval_id$suffix-claude.txt"
-    local build_output="$OUTPUT_DIR/$eval_id$suffix-build.txt"
-    local errors_file="$OUTPUT_DIR/$eval_id$suffix-errors.txt"
-    local result_file="$OUTPUT_DIR/$eval_id$suffix.result"
+    local work_dir="$WORK_BASE-$eval_id$suffix$backend_suffix"
+    local agent_output="$OUTPUT_DIR/$eval_id$suffix$backend_suffix-agent.txt"
+    local build_output="$OUTPUT_DIR/$eval_id$suffix$backend_suffix-build.txt"
+    local errors_file="$OUTPUT_DIR/$eval_id$suffix$backend_suffix-errors.txt"
+    local result_file="$OUTPUT_DIR/$eval_id$suffix$backend_suffix.result"
 
     # Log start
     local eval_start=$(date +%s)
@@ -214,37 +369,17 @@ $eval_query"
 $clean_query"
     fi
 
-    # Run Claude
-    local claude_start=$(date +%s)
-    if [[ -n "$ANTHROPIC_API_KEY" ]]; then
-        claude -p "$full_query" \
-              --dangerously-skip-permissions \
-              --no-session-persistence \
-              "$work_dir" > "$claude_output" 2>&1 || true
-    elif command -v iap-auth &>/dev/null; then
-        local auth_token
-        auth_token=$(iap-auth https://devaigateway.a.musta.ch 2>/dev/null)
-        if [[ -z "$auth_token" ]]; then
-            echo "FAIL|$eval_id|0|AUTH_FAILED" > "$result_file"
-            echo "[$(date +%H:%M:%S)] $eval_id: AUTH FAILED"
-            return 1
-        fi
-        CLAUDE_CODE_USE_BEDROCK=1 \
-        ANTHROPIC_BEDROCK_BASE_URL="https://devaigateway.a.musta.ch/bedrock" \
-        CLAUDE_CODE_SKIP_BEDROCK_AUTH=1 \
-        ANTHROPIC_AUTH_TOKEN="$auth_token" \
-        claude -p "$full_query" \
-              --dangerously-skip-permissions \
-              --no-session-persistence \
-              "$work_dir" > "$claude_output" 2>&1 || true
-    else
+    # Run AI agent
+    local agent_start=$(date +%s)
+    > "$agent_output"  # Clear output file
+    if ! run_agent "$work_dir" "$full_query" "$agent_output"; then
         echo "FAIL|$eval_id|0|AUTH_FAILED" > "$result_file"
-        echo "[$(date +%H:%M:%S)] $eval_id: NO AUTH"
+        echo "[$(date +%H:%M:%S)] $eval_id: AUTH FAILED"
         return 1
     fi
 
-    local claude_end=$(date +%s)
-    local claude_time=$((claude_end - claude_start))
+    local agent_end=$(date +%s)
+    local agent_time=$((agent_end - agent_start))
 
     # Build and fix loop
     local build_start=$(date +%s)
@@ -271,23 +406,7 @@ $build_error
 \`\`\`
 Work ONLY in $work_dir."
 
-                if [[ -n "$ANTHROPIC_API_KEY" ]]; then
-                    claude -p "$fix_query" \
-                          --dangerously-skip-permissions \
-                          --no-session-persistence \
-                          "$work_dir" >> "$claude_output" 2>&1 || true
-                elif command -v iap-auth &>/dev/null; then
-                    local auth_token
-                    auth_token=$(iap-auth https://devaigateway.a.musta.ch 2>/dev/null)
-                    CLAUDE_CODE_USE_BEDROCK=1 \
-                    ANTHROPIC_BEDROCK_BASE_URL="https://devaigateway.a.musta.ch/bedrock" \
-                    CLAUDE_CODE_SKIP_BEDROCK_AUTH=1 \
-                    ANTHROPIC_AUTH_TOKEN="$auth_token" \
-                    claude -p "$fix_query" \
-                          --dangerously-skip-permissions \
-                          --no-session-persistence \
-                          "$work_dir" >> "$claude_output" 2>&1 || true
-                fi
+                run_agent "$work_dir" "$fix_query" "$agent_output"
             fi
         fi
         ((attempt++))
@@ -342,7 +461,7 @@ Work ONLY in $work_dir."
 
     # Determine pass/fail
     local eval_passed=0
-    local timing_info="setup:${setup_time}s claude:${claude_time}s build:${build_time}s total:${total_time}s"
+    local timing_info="setup:${setup_time}s agent:${agent_time}s build:${build_time}s total:${total_time}s"
 
     if [[ $build_success -eq 1 ]] && [[ $patterns_found -eq $patterns_total ]] && [[ $negative_failed -eq 0 ]]; then
         echo "PASS|$eval_id|$attempt|$retry_errors|$timing_info" > "$result_file"
@@ -371,8 +490,8 @@ Work ONLY in $work_dir."
 }
 
 # Export functions and variables for parallel execution
-export -f run_evaluation setup_project extract_error_summary
-export SCRIPT_DIR OUTPUT_DIR BASE_TEMPLATE WORK_BASE USE_SKILL MAX_RETRIES
+export -f run_evaluation setup_project extract_error_summary run_agent run_with_claude run_with_crush
+export SCRIPT_DIR OUTPUT_DIR BASE_TEMPLATE WORK_BASE USE_SKILL MAX_RETRIES BACKEND
 export RED GREEN YELLOW BLUE CYAN NC
 
 main() {
@@ -381,11 +500,22 @@ main() {
     echo "Base template: $BASE_TEMPLATE"
     echo "Work directory: $WORK_BASE-<eval-id>"
     [[ $USE_SKILL -eq 1 ]] && echo -e "Mode: ${GREEN}WITH SKILL${NC}" || echo -e "Mode: ${BLUE}NO SKILL${NC}"
+    if [[ "$BACKEND" == "crush" ]]; then
+        echo -e "Backend: ${CYAN}Crush${NC} (~165 MB/process)"
+    else
+        echo -e "Backend: ${CYAN}Claude CLI${NC} (~800 MB/process)"
+    fi
     echo "Max retries: $MAX_RETRIES"
     echo -e "Parallelism: ${CYAN}$MAX_PARALLEL${NC} concurrent evaluations"
     echo ""
 
     check_deps
+
+    # Setup Crush providers if using Crush backend
+    if [[ "$BACKEND" == "crush" ]]; then
+        echo "Configuring Crush providers for gateway..."
+        setup_crush_providers
+    fi
 
     # Pre-warm Gradle daemon
     prewarm_gradle
@@ -412,7 +542,8 @@ main() {
 
     # Clear old result files
     local suffix=$([[ $USE_SKILL -eq 0 ]] && echo "-noskill" || echo "")
-    rm -f "$OUTPUT_DIR"/*$suffix.result 2>/dev/null
+    local backend_suffix=$([[ "$BACKEND" == "crush" ]] && echo "-crush" || echo "")
+    rm -f "$OUTPUT_DIR"/*$suffix$backend_suffix.result 2>/dev/null
 
     # Track running jobs
     local running_pids=()
@@ -477,7 +608,7 @@ main() {
 
     for idx in "${evals_to_run[@]}"; do
         local eval_id=$(jq -r ".[$idx].id" "$EVAL_FILE")
-        local result_file="$OUTPUT_DIR/$eval_id$suffix.result"
+        local result_file="$OUTPUT_DIR/$eval_id$suffix$backend_suffix.result"
 
         if [[ -f "$result_file" ]]; then
             local result=$(cat "$result_file")
@@ -500,7 +631,7 @@ main() {
                 ((failed++))
                 local fail_reason=$(echo "$result" | cut -d'|' -f4)
                 echo -e "${RED}✗${NC} $eval_id - FAILED ($fail_reason)"
-                local errors_file="$OUTPUT_DIR/$eval_id$suffix-errors.txt"
+                local errors_file="$OUTPUT_DIR/$eval_id$suffix$backend_suffix-errors.txt"
                 if [[ -f "$errors_file" ]] && [[ -s "$errors_file" ]]; then
                     while IFS= read -r line; do
                         echo -e "    ${CYAN}$line${NC}"
