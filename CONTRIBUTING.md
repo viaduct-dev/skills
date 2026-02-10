@@ -27,9 +27,11 @@ The `test/` directory contains an evaluation harness to test skill effectiveness
 
 ```bash
 cd test
-./run-evaluations.sh              # Run all evaluations
+./run-evaluations.sh              # Run all evaluations (parallel)
 ./run-evaluations.sh eval-01      # Run specific evaluation
 ./run-evaluations.sh --no-skill   # Run without skills (baseline)
+./run-evaluations.sh --parallel=6 # Run 6 evaluations concurrently
+./run-evaluations.sh --sequential # Run one at a time (for debugging)
 ```
 
 ### Options
@@ -38,6 +40,8 @@ cd test
 |--------|-------------|
 | `--skill` | Run with skill documentation (default) |
 | `--no-skill` | Run without skills for baseline comparison |
+| `--parallel=N` | Run N evaluations concurrently (default: 4) |
+| `--sequential` | Run evaluations one at a time |
 | `<eval-id>` | Filter to run specific evaluation(s) |
 
 ### Environment Variables
@@ -46,6 +50,21 @@ cd test
 |----------|---------|-------------|
 | `ANTHROPIC_API_KEY` | - | Anthropic API key for Claude access |
 | `MAX_RETRIES` | 3 | Max build/fix retry attempts |
+| `MAX_PARALLEL` | 4 | Max concurrent evaluations |
+
+### Performance & Resource Usage
+
+Each parallel evaluation spawns a Claude CLI process. Resource requirements:
+
+| Parallelism | Memory | Wall Time (10 evals) |
+|-------------|--------|----------------------|
+| 1 (sequential) | ~800 MB | ~28 min |
+| 4 | ~3.2 GB | ~8 min |
+| 6 | ~4.8 GB | ~6 min |
+
+**Memory per thread: ~800 MB**
+
+The harness pre-warms the Gradle daemon and uses unique workspaces per evaluation to enable safe parallel execution. Both `--skill` and `--no-skill` modes can run simultaneously without conflicts.
 
 ### Output
 
