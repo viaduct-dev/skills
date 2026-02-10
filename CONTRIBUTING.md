@@ -5,8 +5,8 @@
 - Node.js 18+
 - Java 17+
 - AI CLI (one of):
-  - [Claude CLI](https://github.com/anthropics/claude-code) (`npm install -g @anthropic-ai/claude-code`) - default backend
-  - [Crush](https://github.com/charmbracelet/crush) (`brew install charmbracelet/tap/crush`) - lightweight alternative
+  - [Crush](https://github.com/charmbracelet/crush) (`brew install charmbracelet/tap/crush`) - default backend, lightweight
+  - [Claude CLI](https://github.com/anthropics/claude-code) (`npm install -g @anthropic-ai/claude-code`) - alternative
 - jq (`brew install jq` on macOS)
 
 ## Authentication
@@ -29,8 +29,8 @@ The `test/` directory contains an evaluation harness to test skill effectiveness
 
 ```bash
 cd test
-./run-evaluations.sh              # Run all evaluations (parallel, Claude CLI)
-./run-evaluations.sh --crush      # Run with Crush backend (lower memory)
+./run-evaluations.sh              # Run all evaluations (parallel, Crush)
+./run-evaluations.sh --claude     # Run with Claude CLI backend
 ./run-evaluations.sh eval-01      # Run specific evaluation
 ./run-evaluations.sh --no-skill   # Run without skills (baseline)
 ./run-evaluations.sh --parallel=6 # Run 6 evaluations concurrently
@@ -43,10 +43,10 @@ cd test
 |--------|-------------|
 | `--skill` | Run with skill documentation (default) |
 | `--no-skill` | Run without skills for baseline comparison |
-| `--parallel=N` | Run N evaluations concurrently (default: 4 for Claude, 10 for Crush) |
+| `--parallel=N` | Run N evaluations concurrently (default: 10 for Crush, 4 for Claude) |
 | `--sequential` | Run evaluations one at a time |
-| `--backend=X` | Use `claude` (default) or `crush` as the AI backend |
-| `--crush` | Shorthand for `--backend=crush` |
+| `--backend=X` | Use `crush` (default) or `claude` as the AI backend |
+| `--crush` | Shorthand for `--backend=crush` (default) |
 | `--claude` | Shorthand for `--backend=claude` |
 | `<eval-id>` | Filter to run specific evaluation(s) |
 
@@ -56,8 +56,8 @@ cd test
 |----------|---------|-------------|
 | `ANTHROPIC_API_KEY` | - | Anthropic API key for Claude access |
 | `MAX_RETRIES` | 3 | Max build/fix retry attempts |
-| `MAX_PARALLEL` | 4/10 | Max concurrent evaluations (4 for Claude, 10 for Crush) |
-| `BACKEND` | claude | AI backend to use (`claude` or `crush`) |
+| `MAX_PARALLEL` | 10/4 | Max concurrent evaluations (10 for Crush, 4 for Claude) |
+| `BACKEND` | crush | AI backend to use (`crush` or `claude`) |
 
 ### AI Backends
 

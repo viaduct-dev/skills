@@ -16,13 +16,13 @@
 # Options:
 #   --no-skill      Run without the viaduct skill (baseline test)
 #   --skill         Run with the viaduct skill (default)
-#   --parallel=N    Run N evaluations in parallel (default: 4)
+#   --parallel=N    Run N evaluations in parallel (default: 10 for Crush, 4 for Claude)
 #   --sequential    Run evaluations one at a time (--parallel=1)
-#   --backend=X     Use 'claude' (default) or 'crush' as the AI backend
+#   --backend=X     Use 'crush' (default) or 'claude' as the AI backend
 #
 # Environment:
 #   MAX_RETRIES=3       Set max retry attempts
-#   MAX_PARALLEL=4      Set max parallel evaluations (default: 4 for claude, 10 for crush)
+#   MAX_PARALLEL=10     Set max parallel evaluations (default: 10 for Crush, 4 for Claude)
 #
 # Output:
 #   .eval-outputs/<eval-id>-agent.txt     Agent's final response
@@ -31,9 +31,9 @@
 #   .eval-outputs/<eval-id>-workspace/    Full workspace (preserved on failure or retry)
 #
 # Backends:
-#   claude  - Claude CLI (~800 MB/process, requires claude CLI)
-#   crush   - Charmbracelet Crush (~165 MB/process, requires crush CLI)
+#   crush   - Charmbracelet Crush (~165 MB/process, default, requires crush CLI)
 #             Crush requires: CATWALK_URL=http://localhost:1 to use cached providers
+#   claude  - Claude CLI (~800 MB/process, requires claude CLI)
 #
 
 set -o pipefail
@@ -48,7 +48,7 @@ WORK_BASE="/tmp/viaduct-skill-eval"
 USE_SKILL=1
 FILTER=""
 MAX_RETRIES="${MAX_RETRIES:-3}"
-BACKEND="${BACKEND:-claude}"
+BACKEND="${BACKEND:-crush}"
 # MAX_PARALLEL default depends on backend (set after parsing args)
 
 # Colors
