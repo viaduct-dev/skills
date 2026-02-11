@@ -2,6 +2,23 @@
 
 ## Prerequisites
 
+### Option 1: Using mise (Recommended)
+
+[mise](https://mise.jdx.dev/) automatically manages all dependencies:
+
+```bash
+# Install mise (if not already installed)
+curl https://mise.run | sh
+
+# Install all dependencies
+mise install
+
+# Run evaluations
+mise run test
+```
+
+### Option 2: Manual Installation
+
 - Node.js 18+
 - Java 17+
 - AI CLI (one of):
@@ -25,7 +42,17 @@ If you have access to Airbnb's internal gateway, the script will automatically u
 
 ## Running Evaluations
 
-The `test/` directory contains an evaluation harness to test skill effectiveness.
+### Using mise (Recommended)
+
+```bash
+mise run test              # Run all 10 evaluations in parallel with Crush
+mise run test:claude       # Run with Claude CLI backend
+mise run test:sequential   # Run one at a time (for debugging)
+mise run test:no-skill     # Run without skills (baseline)
+mise run test -- eval-01   # Run specific evaluation
+```
+
+### Using the script directly
 
 ```bash
 cd test
