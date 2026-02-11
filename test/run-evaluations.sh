@@ -16,6 +16,8 @@
 # Options:
 #   --no-skill      Run without the viaduct skill (baseline test)
 #   --skill         Run with the viaduct skill (default)
+#   --compare       Run with and without skill, then show side-by-side comparison
+#   --clean         Remove all previous eval outputs before starting
 #   --parallel=N    Run N evaluations in parallel (default: 10 for Crush, 4 for Claude)
 #   --sequential    Run evaluations one at a time (--parallel=1)
 #   --backend=X     Use 'crush' (default) or 'claude' as the AI backend
@@ -38,6 +40,18 @@
 
 set -o pipefail
 
+# Clean up all child processes on exit
+cleanup() {
+    local pids=$(jobs -p 2>/dev/null)
+    if [[ -n "$pids" ]]; then
+        echo -e "\nCleaning up child processes..."
+        kill $pids 2>/dev/null
+        sleep 2
+        kill -9 $pids 2>/dev/null
+    fi
+}
+trap cleanup EXIT INT TERM
+
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 EVAL_FILE="$SCRIPT_DIR/evaluations.json"
 OUTPUT_DIR="$SCRIPT_DIR/.eval-outputs"
@@ -46,8 +60,11 @@ WORK_BASE="/tmp/viaduct-skill-eval"
 
 # Default settings
 USE_SKILL=1
+CLEAN=0
+COMPARE=0
 FILTER=""
 MAX_RETRIES="${MAX_RETRIES:-3}"
+EVAL_TIMEOUT="${EVAL_TIMEOUT:-600}"  # 10 minutes per evaluation
 BACKEND="${BACKEND:-crush}"
 # MAX_PARALLEL default depends on backend (set after parsing args)
 
@@ -89,6 +106,14 @@ while [[ $# -gt 0 ]]; do
             ;;
         --claude)
             BACKEND="claude"
+            shift
+            ;;
+        --clean)
+            CLEAN=1
+            shift
+            ;;
+        --compare)
+            COMPARE=1
             shift
             ;;
         *)
@@ -134,6 +159,54 @@ time_cmd() {
     echo $((end - start))
 }
 
+# Kill a process and all its children
+kill_tree() {
+    local pid="$1"
+    local signal="${2:-TERM}"
+    # Kill children first (process group), then the process itself
+    local children=$(pgrep -P "$pid" 2>/dev/null)
+    for child in $children; do
+        kill_tree "$child" "$signal"
+    done
+    kill -"$signal" "$pid" 2>/dev/null || true
+}
+
+# Run a function with a timeout. Kills the process tree if it exceeds the limit.
+# Usage: run_with_timeout <timeout_secs> <function> [args...]
+run_with_timeout() {
+    local timeout="$1"
+    shift
+
+    # Run the function in a subshell so we get a single PID to track
+    "$@" &
+    local cmd_pid=$!
+
+    # Watchdog: sleep then kill if still running
+    (
+        sleep "$timeout"
+        if kill -0 "$cmd_pid" 2>/dev/null; then
+            echo -e "${RED}[$(date +%H:%M:%S)] TIMEOUT: killing evaluation (exceeded ${timeout}s)${NC}" >&2
+            kill_tree "$cmd_pid" TERM
+            sleep 5
+            # Force kill if still alive
+            if kill -0 "$cmd_pid" 2>/dev/null; then
+                kill_tree "$cmd_pid" KILL
+            fi
+        fi
+    ) &
+    local watchdog_pid=$!
+
+    # Wait for the command to finish (either naturally or killed)
+    wait "$cmd_pid" 2>/dev/null
+    local exit_code=$?
+
+    # Clean up the watchdog
+    kill "$watchdog_pid" 2>/dev/null
+    wait "$watchdog_pid" 2>/dev/null
+
+    return $exit_code
+}
+
 # Pre-warm Gradle daemon and download dependencies
 prewarm_gradle() {
     echo "Pre-warming Gradle daemon and cache..."
@@ -175,7 +248,22 @@ setup_project() {
 
     # Install AGENTS.md with doc references if in skill mode
     if [[ $USE_SKILL -eq 1 ]]; then
-        (cd "$work_dir" && node "$SCRIPT_DIR/../bin/install.js") > /dev/null 2>&1
+        local install_output
+        install_output=$(cd "$work_dir" && node "$SCRIPT_DIR/../bin/install.js" 2>&1)
+        local install_exit=$?
+
+        if [[ $install_exit -ne 0 ]]; then
+            echo -e "${RED}Warning: skill install failed for $eval_id (exit $install_exit)${NC}" >&2
+            echo "$install_output" >&2
+        fi
+
+        # Verify docs were actually installed
+        if [[ ! -f "$work_dir/AGENTS.md" && ! -f "$work_dir/CLAUDE.md" ]]; then
+            echo -e "${RED}Warning: no AGENTS.md or CLAUDE.md found in $work_dir after install${NC}" >&2
+        fi
+        if [[ ! -d "$work_dir/.viaduct/agents" ]]; then
+            echo -e "${RED}Warning: .viaduct/agents/ directory not created in $work_dir${NC}" >&2
+        fi
     fi
 
     return 0
@@ -509,8 +597,8 @@ Work ONLY in $work_dir."
 }
 
 # Export functions and variables for parallel execution
-export -f run_evaluation setup_project extract_error_summary run_agent run_with_claude run_with_crush
-export SCRIPT_DIR OUTPUT_DIR BASE_TEMPLATE WORK_BASE USE_SKILL MAX_RETRIES BACKEND USE_GATEWAY
+export -f run_evaluation setup_project extract_error_summary run_agent run_with_claude run_with_crush kill_tree run_with_timeout
+export SCRIPT_DIR OUTPUT_DIR BASE_TEMPLATE WORK_BASE USE_SKILL MAX_RETRIES EVAL_TIMEOUT BACKEND USE_GATEWAY
 export RED GREEN YELLOW BLUE CYAN NC
 
 main() {
@@ -525,10 +613,20 @@ main() {
         echo -e "Backend: ${CYAN}Claude CLI${NC} (~800 MB/process)"
     fi
     echo "Max retries: $MAX_RETRIES"
+    echo "Eval timeout: ${EVAL_TIMEOUT}s"
     echo -e "Parallelism: ${CYAN}$MAX_PARALLEL${NC} concurrent evaluations"
     echo ""
 
     check_deps
+
+    # Clean old outputs if requested
+    if [[ $CLEAN -eq 1 ]]; then
+        echo -e "${YELLOW}Cleaning eval outputs...${NC}"
+        rm -rf "$OUTPUT_DIR"/*-workspace 2>/dev/null
+        rm -f "$OUTPUT_DIR"/*.result "$OUTPUT_DIR"/*-agent.txt "$OUTPUT_DIR"/*-build.txt "$OUTPUT_DIR"/*-errors.txt "$OUTPUT_DIR"/*-claude.txt 2>/dev/null
+        echo "Done."
+        echo ""
+    fi
 
     # Detect authentication mode (direct API vs internal gateway)
     detect_auth_mode
@@ -607,8 +705,8 @@ main() {
             fi
         done
 
-        # Start evaluation in background
-        run_evaluation "$eval_id" "$eval_name" "$eval_query" "$verify_patterns" "$schema_addition" "$negative_patterns" &
+        # Start evaluation in background with timeout
+        run_with_timeout "$EVAL_TIMEOUT" run_evaluation "$eval_id" "$eval_name" "$eval_query" "$verify_patterns" "$schema_addition" "$negative_patterns" &
         running_pids+=($!)
         running_evals+=("$eval_id")
     done
@@ -619,63 +717,115 @@ main() {
         wait "$pid" 2>/dev/null || true
     done
 
-    # Collect results
-    echo ""
-    echo "============================================================"
-    echo "SUMMARY"
-    echo "============================================================"
-
-    local passed=0 failed=0 one_shot=0
-
-    [[ $USE_SKILL -eq 1 ]] && echo -e "Mode: ${GREEN}WITH SKILL${NC}" || echo -e "Mode: ${BLUE}NO SKILL${NC}"
-
-    echo ""
-    echo "DETAILED RESULTS:"
-    echo "-----------------"
+    # Collect results into arrays for grouped reporting
+    local passed=0 failed=0 one_shot=0 total_run=0
+    local -a success_oneshot=()
+    local -a success_retry=()    # "eval_id|attempts|timing"
+    local -a failure_list=()     # "eval_id|reason|details"
 
     for idx in "${evals_to_run[@]}"; do
         local eval_id=$(jq -r ".[$idx].id" "$EVAL_FILE")
+        local eval_name=$(jq -r ".[$idx].name" "$EVAL_FILE")
         local result_file="$OUTPUT_DIR/$eval_id$suffix$backend_suffix.result"
+        ((total_run++))
 
         if [[ -f "$result_file" ]]; then
             local result=$(cat "$result_file")
             local status=$(echo "$result" | cut -d'|' -f1)
             local attempt=$(echo "$result" | cut -d'|' -f3)
-            local errors=$(echo "$result" | cut -d'|' -f4-)
+            local timing=$(echo "$result" | rev | cut -d'|' -f1 | rev)
 
             if [[ "$status" == "PASS" ]]; then
                 ((passed++))
                 if [[ "$attempt" == "1" ]]; then
                     ((one_shot++))
-                    echo -e "${GREEN}✓${NC} $eval_id - ${GREEN}one-shot${NC}"
+                    success_oneshot+=("$eval_id ($eval_name)")
                 else
-                    echo -e "${GREEN}✓${NC} $eval_id - attempt $attempt"
-                    if [[ -n "$errors" ]]; then
-                        echo -e "    ${CYAN}retries: $errors${NC}"
-                    fi
+                    # Collect retry error details
+                    local retry_errors=$(echo "$result" | cut -d'|' -f4)
+                    success_retry+=("$eval_id ($eval_name)|$attempt|$timing|$retry_errors")
                 fi
             else
                 ((failed++))
                 local fail_reason=$(echo "$result" | cut -d'|' -f4)
-                echo -e "${RED}✗${NC} $eval_id - FAILED ($fail_reason)"
+                local error_details=""
                 local errors_file="$OUTPUT_DIR/$eval_id$suffix$backend_suffix-errors.txt"
                 if [[ -f "$errors_file" ]] && [[ -s "$errors_file" ]]; then
-                    while IFS= read -r line; do
-                        echo -e "    ${CYAN}$line${NC}"
-                    done < "$errors_file"
+                    error_details=$(cat "$errors_file")
                 fi
+                failure_list+=("$eval_id ($eval_name)|$fail_reason|$error_details|$timing")
             fi
         else
             ((failed++))
-            echo -e "${RED}✗${NC} $eval_id - NO RESULT FILE"
+            failure_list+=("$eval_id ($eval_name)|timeout|Exceeded ${EVAL_TIMEOUT}s limit|")
         fi
     done
 
+    # Print report
     echo ""
     echo "============================================================"
-    echo -e "Passed: ${GREEN}$passed${NC} / $((passed + failed))"
-    echo -e "One-shot: ${GREEN}$one_shot${NC} / $passed"
-    echo -e "Failed: ${RED}$failed${NC}"
+    echo "REPORT"
+    echo "============================================================"
+    [[ $USE_SKILL -eq 1 ]] && echo -e "Mode: ${GREEN}WITH SKILL${NC}" || echo -e "Mode: ${BLUE}NO SKILL${NC}"
+    echo -e "Backend: ${CYAN}$BACKEND${NC}"
+    echo ""
+
+    # --- Successes ---
+    echo -e "${GREEN}PASSED: $passed / $total_run${NC}"
+    echo ""
+
+    if [[ ${#success_oneshot[@]} -gt 0 ]]; then
+        echo -e "  ${GREEN}One-shot ($one_shot):${NC}"
+        for entry in "${success_oneshot[@]}"; do
+            echo -e "    ${GREEN}✓${NC} $entry"
+        done
+        echo ""
+    fi
+
+    if [[ ${#success_retry[@]} -gt 0 ]]; then
+        echo -e "  ${YELLOW}Passed with retries ($(( passed - one_shot ))):${NC}"
+        for entry in "${success_retry[@]}"; do
+            local name=$(echo "$entry" | cut -d'|' -f1)
+            local attempts=$(echo "$entry" | cut -d'|' -f2)
+            local timing=$(echo "$entry" | cut -d'|' -f3)
+            local retry_errors=$(echo "$entry" | cut -d'|' -f4)
+            echo -e "    ${YELLOW}✓${NC} $name — ${YELLOW}$attempts attempts${NC} [$timing]"
+            if [[ -n "$retry_errors" ]]; then
+                # Split retry errors (pipe-separated within the field, comma-separated here)
+                echo -e "      ${CYAN}retry errors: $retry_errors${NC}"
+            fi
+        done
+        echo ""
+    fi
+
+    # --- Failures ---
+    if [[ ${#failure_list[@]} -gt 0 ]]; then
+        echo -e "${RED}FAILED: $failed / $total_run${NC}"
+        echo ""
+        for entry in "${failure_list[@]}"; do
+            local name=$(echo "$entry" | cut -d'|' -f1)
+            local reason=$(echo "$entry" | cut -d'|' -f2)
+            local details=$(echo "$entry" | cut -d'|' -f3)
+            local timing=$(echo "$entry" | cut -d'|' -f4)
+            echo -e "  ${RED}✗${NC} $name"
+            echo -e "    Reason: ${RED}$reason${NC}"
+            if [[ -n "$timing" ]]; then
+                echo -e "    Timing: $timing"
+            fi
+            if [[ -n "$details" ]]; then
+                while IFS= read -r line; do
+                    echo -e "    ${CYAN}$line${NC}"
+                done <<< "$details"
+            fi
+            echo ""
+        done
+    fi
+
+    echo "============================================================"
+    echo -e "Total: $total_run  |  ${GREEN}Passed: $passed${NC}  |  ${GREEN}One-shot: $one_shot${NC}  |  ${RED}Failed: $failed${NC}"
+    if [[ $passed -gt 0 ]]; then
+        echo -e "One-shot rate: ${GREEN}$(( one_shot * 100 / passed ))%${NC} of passes  |  ${GREEN}$(( one_shot * 100 / total_run ))%${NC} of total"
+    fi
     echo ""
     echo "Outputs: $OUTPUT_DIR"
 
@@ -688,8 +838,153 @@ main() {
         done
     fi
 
-    [[ $failed -gt 0 ]] && exit 1
+    [[ $failed -gt 0 ]] && return 1 || return 0
+}
+
+run_compare() {
+    echo "============================================================"
+    echo "COMPARISON MODE: skill vs no-skill"
+    echo "============================================================"
+    echo ""
+
+    local backend_suffix=$([[ "$BACKEND" == "crush" ]] && echo "-crush" || echo "")
+
+    # Run with skill
+    echo -e "${GREEN}>>> Running WITH skill...${NC}"
+    echo ""
+    USE_SKILL=1
+    export USE_SKILL
+    main
+    local skill_exit=$?
+
+    echo ""
+    echo ""
+
+    # Run without skill
+    echo -e "${BLUE}>>> Running WITHOUT skill...${NC}"
+    echo ""
+    USE_SKILL=0
+    export USE_SKILL
+    main
+    local noskill_exit=$?
+
+    # Build comparison from result files
+    echo ""
+    echo ""
+    echo "============================================================"
+    echo "COMPARISON REPORT"
+    echo "============================================================"
+    echo -e "Backend: ${CYAN}$BACKEND${NC}"
+    echo ""
+
+    local eval_count=$(jq length "$EVAL_FILE")
+
+    # Header
+    printf "  %-40s  %-18s  %-18s\n" "Evaluation" "With Skill" "Without Skill"
+    printf "  %-40s  %-18s  %-18s\n" "$(printf '%0.s─' {1..40})" "$(printf '%0.s─' {1..18})" "$(printf '%0.s─' {1..18})"
+
+    local skill_passed=0 skill_oneshot=0 skill_total=0
+    local noskill_passed=0 noskill_oneshot=0 noskill_total=0
+
+    for i in $(seq 0 $((eval_count - 1))); do
+        local eval_id=$(jq -r ".[$i].id" "$EVAL_FILE")
+        local eval_name=$(jq -r ".[$i].name" "$EVAL_FILE")
+
+        # Filter check
+        if [[ -n "$FILTER" && "$eval_id" != *"$FILTER"* && "$eval_name" != *"$FILTER"* ]]; then
+            continue
+        fi
+
+        local skill_result_file="$OUTPUT_DIR/$eval_id$backend_suffix.result"
+        local noskill_result_file="$OUTPUT_DIR/$eval_id-noskill$backend_suffix.result"
+
+        local skill_label noskill_label
+
+        # Parse skill result
+        ((skill_total++))
+        if [[ -f "$skill_result_file" ]]; then
+            local s_result=$(cat "$skill_result_file")
+            local s_status=$(echo "$s_result" | cut -d'|' -f1)
+            local s_attempt=$(echo "$s_result" | cut -d'|' -f3)
+            if [[ "$s_status" == "PASS" ]]; then
+                ((skill_passed++))
+                if [[ "$s_attempt" == "1" ]]; then
+                    ((skill_oneshot++))
+                    skill_label="${GREEN}one-shot${NC}"
+                else
+                    skill_label="${YELLOW}attempt $s_attempt${NC}"
+                fi
+            else
+                local s_reason=$(echo "$s_result" | cut -d'|' -f4)
+                skill_label="${RED}FAIL ($s_reason)${NC}"
+            fi
+        else
+            skill_label="${RED}TIMEOUT${NC}"
+        fi
+
+        # Parse no-skill result
+        ((noskill_total++))
+        if [[ -f "$noskill_result_file" ]]; then
+            local n_result=$(cat "$noskill_result_file")
+            local n_status=$(echo "$n_result" | cut -d'|' -f1)
+            local n_attempt=$(echo "$n_result" | cut -d'|' -f3)
+            if [[ "$n_status" == "PASS" ]]; then
+                ((noskill_passed++))
+                if [[ "$n_attempt" == "1" ]]; then
+                    ((noskill_oneshot++))
+                    noskill_label="${GREEN}one-shot${NC}"
+                else
+                    noskill_label="${YELLOW}attempt $n_attempt${NC}"
+                fi
+            else
+                local n_reason=$(echo "$n_result" | cut -d'|' -f4)
+                noskill_label="${RED}FAIL ($n_reason)${NC}"
+            fi
+        else
+            noskill_label="${RED}TIMEOUT${NC}"
+        fi
+
+        # Use fixed-width columns with tput for reliable alignment
+        local display_id="$eval_id"
+        [[ ${#display_id} -gt 40 ]] && display_id="${display_id:0:37}..."
+        printf "  %-40s  " "$display_id"
+        # Print skill result (pad to 20 visible chars)
+        echo -ne "$skill_label"
+        printf "\t"
+        echo -e "$noskill_label"
+    done
+
+    echo ""
+    printf "  %-40s  %-18s  %-18s\n" "$(printf '%0.s─' {1..40})" "$(printf '%0.s─' {1..18})" "$(printf '%0.s─' {1..18})"
+
+    echo -e "  Passed:                                   ${GREEN}$skill_passed / $skill_total${NC}              ${BLUE}$noskill_passed / $noskill_total${NC}"
+    echo -e "  One-shot:                                 ${GREEN}$skill_oneshot / $skill_total${NC}              ${BLUE}$noskill_oneshot / $noskill_total${NC}"
+
+    if [[ $skill_total -gt 0 ]]; then
+        local skill_pct=$(( skill_oneshot * 100 / skill_total ))
+        local noskill_pct=$(( noskill_oneshot * 100 / noskill_total ))
+        local delta=$(( skill_pct - noskill_pct ))
+        echo ""
+        echo -e "  One-shot rate:                            ${GREEN}${skill_pct}%${NC}                  ${BLUE}${noskill_pct}%${NC}"
+        if [[ $delta -gt 0 ]]; then
+            echo -e "  Skill improvement:                        ${GREEN}+${delta}pp${NC}"
+        elif [[ $delta -lt 0 ]]; then
+            echo -e "  Skill improvement:                        ${RED}${delta}pp${NC}"
+        else
+            echo -e "  Skill improvement:                        0pp (no difference)"
+        fi
+    fi
+
+    echo ""
+    echo "Outputs: $OUTPUT_DIR"
+
+    [[ $skill_exit -ne 0 || $noskill_exit -ne 0 ]] && exit 1
     exit 0
 }
 
-main
+if [[ $COMPARE -eq 1 ]]; then
+    run_compare
+else
+    main
+    exit $?
+fi

@@ -140,5 +140,34 @@ EOF
   echo "Created .gitignore"
 fi
 
+# 6. Verify installation
+errors=0
+
+if [[ ! -f "$TARGET_FILE" ]]; then
+  echo "Error: $TARGET_FILE was not created."
+  errors=1
+elif ! grep -q "$START_MARKER" "$TARGET_FILE"; then
+  echo "Error: Viaduct index not found in $TARGET_FILE."
+  errors=1
+fi
+
+if [[ ! -d "$DOCS_DIR" ]]; then
+  echo "Error: $DOCS_DIR directory was not created."
+  errors=1
+else
+  doc_count=$(ls "$DOCS_DIR"/*.md 2>/dev/null | wc -l | tr -d ' ')
+  if [[ "$doc_count" -eq 0 ]]; then
+    echo "Error: No documentation files found in $DOCS_DIR/."
+    errors=1
+  else
+    echo "Verified: $doc_count doc files in $DOCS_DIR/"
+  fi
+fi
+
 echo
-echo "Done! Viaduct documentation is now available."
+if [[ $errors -eq 0 ]]; then
+  echo "Done! Viaduct documentation is now available."
+else
+  echo "Installation completed with errors. Check output above."
+  exit 1
+fi
