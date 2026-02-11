@@ -1,2 +1,3 @@
 .gradle/
 .crush/
+test/crush/data/crush/projects.json

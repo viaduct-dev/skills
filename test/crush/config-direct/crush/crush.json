@@ -1,0 +1,11 @@
+{
+  "$schema": "https://charm.land/crush.json",
+  "providers": {
+    "anthropic": {
+      "id": "anthropic",
+      "name": "Anthropic",
+      "type": "anthropic"
+    }
+  },
+  "model": "anthropic/claude-sonnet-4-5-20250929"
+}

@@ -287,49 +287,8 @@ detect_auth_mode() {
     export USE_GATEWAY
 }
 
-# Setup Crush environment for internal gateway (modifies model IDs)
-setup_crush_for_gateway() {
-    # Crush auto-updates providers from remote, which overwrites local changes.
-    # We need to modify the cached providers.json to use gateway model IDs.
-    local providers_file="$HOME/.local/share/crush/providers.json"
-
-    if [[ ! -f "$providers_file" ]]; then
-        echo -e "${YELLOW}Warning: Crush providers.json not found, running crush once to initialize...${NC}"
-        CATWALK_URL="http://localhost:1" crush models > /dev/null 2>&1 || true
-    fi
-
-    if [[ -f "$providers_file" ]]; then
-        # Update Anthropic provider model IDs to match gateway format
-        python3 << 'PYEOF' 2>/dev/null || true
-import json, os
-
-filepath = os.path.expanduser('~/.local/share/crush/providers.json')
-if not os.path.exists(filepath):
-    exit(0)
-
-with open(filepath, 'r') as f:
-    data = json.load(f)
-
-modified = False
-for provider in data:
-    if provider.get('id') == 'anthropic':
-        for model in provider.get('models', []):
-            old_id = model['id']
-            if not old_id.startswith('global.'):
-                model['id'] = f"global.anthropic.{old_id}-v1:0"
-                modified = True
-        if not provider.get('default_large_model_id', '').startswith('global.'):
-            provider['default_large_model_id'] = 'global.anthropic.claude-sonnet-4-5-20250929-v1:0'
-            provider['default_small_model_id'] = 'global.anthropic.claude-haiku-4-5-20251001-v1:0'
-            modified = True
-        break
-
-if modified:
-    with open(filepath, 'w') as f:
-        json.dump(data, f, separators=(',', ':'))
-PYEOF
-    fi
-}
+# Crush config directory (checked into repo)
+CRUSH_CONFIG_DIR="$SCRIPT_DIR/crush"
 
 # Run prompt with Claude CLI
 run_with_claude() {
@@ -371,20 +330,22 @@ run_with_crush() {
     (
         cd "$work_dir"
         if [[ "$USE_GATEWAY" -eq 1 ]]; then
-            # Internal gateway mode: use iap-auth token and gateway endpoint
             local auth_token
             auth_token=$(iap-auth https://devaigateway.a.musta.ch 2>/dev/null)
             if [[ -z "$auth_token" ]]; then
                 echo "Failed to get iap-auth token" >> "$output_file"
                 return 1
             fi
+            # Use repo-local config with gateway model IDs
+            XDG_CONFIG_HOME="$CRUSH_CONFIG_DIR/config" \
+            XDG_DATA_HOME="$CRUSH_CONFIG_DIR/data" \
             ANTHROPIC_API_KEY="$auth_token" \
             ANTHROPIC_API_ENDPOINT="https://devaigateway.a.musta.ch" \
             CATWALK_URL="http://localhost:1" \
             crush run "$prompt" >> "$output_file" 2>&1
         else
-            # Direct Anthropic API mode: use ANTHROPIC_API_KEY directly
-            # CATWALK_URL blocks remote provider updates to keep config stable
+            # Use repo-local config with standard model IDs
+            XDG_CONFIG_HOME="$CRUSH_CONFIG_DIR/config-direct" \
             CATWALK_URL="http://localhost:1" \
             crush run "$prompt" >> "$output_file" 2>&1
         fi
@@ -598,7 +559,7 @@ Work ONLY in $work_dir."
 
 # Export functions and variables for parallel execution
 export -f run_evaluation setup_project extract_error_summary run_agent run_with_claude run_with_crush kill_tree run_with_timeout
-export SCRIPT_DIR OUTPUT_DIR BASE_TEMPLATE WORK_BASE USE_SKILL MAX_RETRIES EVAL_TIMEOUT BACKEND USE_GATEWAY
+export SCRIPT_DIR OUTPUT_DIR BASE_TEMPLATE WORK_BASE USE_SKILL MAX_RETRIES EVAL_TIMEOUT BACKEND USE_GATEWAY CRUSH_CONFIG_DIR
 export RED GREEN YELLOW BLUE CYAN NC
 
 main() {
@@ -634,12 +595,6 @@ main() {
         echo -e "Auth: ${CYAN}Internal gateway${NC} (iap-auth)"
     else
         echo -e "Auth: ${CYAN}Direct Anthropic API${NC}"
-    fi
-
-    # Setup Crush providers if using Crush backend with internal gateway
-    if [[ "$BACKEND" == "crush" ]] && [[ "$USE_GATEWAY" -eq 1 ]]; then
-        echo "Configuring Crush providers for internal gateway..."
-        setup_crush_for_gateway
     fi
 
     # Pre-warm Gradle daemon
