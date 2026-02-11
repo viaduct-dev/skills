@@ -16,16 +16,16 @@ PROJECT_NAME="${1:-myapp}"
 DOCS_DIR=".viaduct/agents"
 START_MARKER="<!-- VIADUCT-AGENTS-MD-START -->"
 END_MARKER="<!-- VIADUCT-AGENTS-MD-END -->"
-# Skill directory -> output file mapping
-declare -A SKILL_MAP=(
-  ["viaduct-mutations"]="mutations.md"
-  ["viaduct-query-resolver"]="query-resolver.md"
-  ["viaduct-field-resolver"]="field-resolver.md"
-  ["viaduct-node-type"]="node-type.md"
-  ["viaduct-batch"]="batch.md"
-  ["viaduct-relationships"]="relationships.md"
-  ["viaduct-scopes"]="scopes.md"
-)
+# Skill directory:output file pairs (compatible with Bash 3)
+SKILLS="
+viaduct-mutations:mutations.md
+viaduct-query-resolver:query-resolver.md
+viaduct-field-resolver:field-resolver.md
+viaduct-node-type:node-type.md
+viaduct-batch:batch.md
+viaduct-relationships:relationships.md
+viaduct-scopes:scopes.md
+"
 
 echo "Installing Viaduct documentation..."
 echo
@@ -36,8 +36,9 @@ mkdir -p "$DOCS_DIR"
 # 2. Download docs from GitHub (try curl first, fall back to gh api for private repos)
 SKILLS_BASE_URL="https://raw.githubusercontent.com/viaduct-dev/skills/main/skills"
 
-for skill_dir in "${!SKILL_MAP[@]}"; do
-  output_file="${SKILL_MAP[$skill_dir]}"
+for entry in $SKILLS; do
+  skill_dir="${entry%%:*}"
+  output_file="${entry##*:}"
   url="$SKILLS_BASE_URL/$skill_dir/SKILL.md"
   api_path="repos/viaduct-dev/skills/contents/skills/$skill_dir/SKILL.md"
 
