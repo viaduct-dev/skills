@@ -181,8 +181,26 @@ setup_project() {
     return 0
 }
 
-# Setup Crush environment (configure providers for internal gateway)
-setup_crush_providers() {
+# Detect if we're using internal gateway or direct Anthropic API
+# Sets USE_GATEWAY=1 if using internal gateway, 0 if using direct API
+detect_auth_mode() {
+    if [[ -n "$ANTHROPIC_API_KEY" ]]; then
+        # Direct Anthropic API key provided
+        USE_GATEWAY=0
+    elif command -v iap-auth &>/dev/null; then
+        # Internal gateway via iap-auth
+        USE_GATEWAY=1
+    else
+        echo -e "${RED}Error: No authentication configured.${NC}"
+        echo "Set ANTHROPIC_API_KEY for direct Anthropic API access,"
+        echo "or ensure iap-auth is available for internal gateway access."
+        exit 1
+    fi
+    export USE_GATEWAY
+}
+
+# Setup Crush environment for internal gateway (modifies model IDs)
+setup_crush_for_gateway() {
     # Crush auto-updates providers from remote, which overwrites local changes.
     # We need to modify the cached providers.json to use gateway model IDs.
     local providers_file="$HOME/.local/share/crush/providers.json"
@@ -262,25 +280,26 @@ run_with_crush() {
     local prompt="$2"
     local output_file="$3"
 
-    local auth_token=""
-    if [[ -n "$ANTHROPIC_API_KEY" ]]; then
-        auth_token="$ANTHROPIC_API_KEY"
-    elif command -v iap-auth &>/dev/null; then
-        auth_token=$(iap-auth https://devaigateway.a.musta.ch 2>/dev/null)
-    fi
-
-    if [[ -z "$auth_token" ]]; then
-        return 1
-    fi
-
-    # Run Crush with gateway configuration
-    # CATWALK_URL blocks remote provider fetch, using our modified local providers
     (
         cd "$work_dir"
-        ANTHROPIC_API_KEY="$auth_token" \
-        ANTHROPIC_API_ENDPOINT="https://devaigateway.a.musta.ch" \
-        CATWALK_URL="http://localhost:1" \
-        crush run "$prompt" >> "$output_file" 2>&1
+        if [[ "$USE_GATEWAY" -eq 1 ]]; then
+            # Internal gateway mode: use iap-auth token and gateway endpoint
+            local auth_token
+            auth_token=$(iap-auth https://devaigateway.a.musta.ch 2>/dev/null)
+            if [[ -z "$auth_token" ]]; then
+                echo "Failed to get iap-auth token" >> "$output_file"
+                return 1
+            fi
+            ANTHROPIC_API_KEY="$auth_token" \
+            ANTHROPIC_API_ENDPOINT="https://devaigateway.a.musta.ch" \
+            CATWALK_URL="http://localhost:1" \
+            crush run "$prompt" >> "$output_file" 2>&1
+        else
+            # Direct Anthropic API mode: use ANTHROPIC_API_KEY directly
+            # CATWALK_URL blocks remote provider updates to keep config stable
+            CATWALK_URL="http://localhost:1" \
+            crush run "$prompt" >> "$output_file" 2>&1
+        fi
     ) || true
     return 0
 }
@@ -491,7 +510,7 @@ Work ONLY in $work_dir."
 
 # Export functions and variables for parallel execution
 export -f run_evaluation setup_project extract_error_summary run_agent run_with_claude run_with_crush
-export SCRIPT_DIR OUTPUT_DIR BASE_TEMPLATE WORK_BASE USE_SKILL MAX_RETRIES BACKEND
+export SCRIPT_DIR OUTPUT_DIR BASE_TEMPLATE WORK_BASE USE_SKILL MAX_RETRIES BACKEND USE_GATEWAY
 export RED GREEN YELLOW BLUE CYAN NC
 
 main() {
@@ -511,10 +530,18 @@ main() {
 
     check_deps
 
-    # Setup Crush providers if using Crush backend
-    if [[ "$BACKEND" == "crush" ]]; then
-        echo "Configuring Crush providers for gateway..."
-        setup_crush_providers
+    # Detect authentication mode (direct API vs internal gateway)
+    detect_auth_mode
+    if [[ "$USE_GATEWAY" -eq 1 ]]; then
+        echo -e "Auth: ${CYAN}Internal gateway${NC} (iap-auth)"
+    else
+        echo -e "Auth: ${CYAN}Direct Anthropic API${NC}"
+    fi
+
+    # Setup Crush providers if using Crush backend with internal gateway
+    if [[ "$BACKEND" == "crush" ]] && [[ "$USE_GATEWAY" -eq 1 ]]; then
+        echo "Configuring Crush providers for internal gateway..."
+        setup_crush_for_gateway
     fi
 
     # Pre-warm Gradle daemon
