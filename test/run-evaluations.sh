@@ -291,16 +291,19 @@ detect_auth_mode() {
 CRUSH_CONFIG_DIR="$SCRIPT_DIR/crush"
 
 # Run prompt with Claude CLI
+# Uses --output-format json to capture token usage alongside agent output
 run_with_claude() {
     local work_dir="$1"
     local prompt="$2"
     local output_file="$3"
 
+    local json_tmp="$work_dir/.claude-response.json"
+    local usage_log="$work_dir/.claude-usage.jsonl"
+
+    local claude_args=(-p "$prompt" --output-format json --dangerously-skip-permissions --no-session-persistence "$work_dir")
+
     if [[ -n "$ANTHROPIC_API_KEY" ]]; then
-        claude -p "$prompt" \
-              --dangerously-skip-permissions \
-              --no-session-persistence \
-              "$work_dir" >> "$output_file" 2>&1 || true
+        claude "${claude_args[@]}" > "$json_tmp" 2>&1 || true
     elif command -v iap-auth &>/dev/null; then
         local auth_token
         auth_token=$(iap-auth https://devaigateway.a.musta.ch 2>/dev/null)
@@ -311,13 +314,21 @@ run_with_claude() {
         ANTHROPIC_BEDROCK_BASE_URL="https://devaigateway.a.musta.ch/bedrock" \
         CLAUDE_CODE_SKIP_BEDROCK_AUTH=1 \
         ANTHROPIC_AUTH_TOKEN="$auth_token" \
-        claude -p "$prompt" \
-              --dangerously-skip-permissions \
-              --no-session-persistence \
-              "$work_dir" >> "$output_file" 2>&1 || true
+        claude "${claude_args[@]}" > "$json_tmp" 2>&1 || true
     else
         return 1
     fi
+
+    # Extract agent text into output file, append usage to log
+    if [[ -f "$json_tmp" ]] && jq -e '.result' "$json_tmp" &>/dev/null; then
+        jq -r '.result // empty' "$json_tmp" >> "$output_file"
+        jq -c '{input_tokens: (.usage.input_tokens // 0), output_tokens: (.usage.output_tokens // 0), cache_creation: (.usage.cache_creation_input_tokens // 0), cache_read: (.usage.cache_read_input_tokens // 0), cost: (.total_cost_usd // 0)}' "$json_tmp" >> "$usage_log"
+    else
+        # Fallback: non-JSON output (e.g., error messages)
+        cat "$json_tmp" >> "$output_file" 2>/dev/null || true
+    fi
+    rm -f "$json_tmp"
+
     return 0
 }
 
@@ -366,16 +377,29 @@ run_agent() {
     fi
 }
 
-# Extract token counts from Crush's session database
+# Extract token counts from backend session data
 # Writes prompt_tokens|completion_tokens|cost to the tokens file
+# Crush: reads SQLite sessions table
+# Claude: reads .claude-usage.jsonl (one JSON line per invocation)
 extract_tokens() {
     local work_dir="$1"
     local tokens_file="$2"
 
-    local db="$work_dir/.crush/crush.db"
-    if [[ -f "$db" ]] && command -v sqlite3 &>/dev/null; then
+    local usage_log="$work_dir/.claude-usage.jsonl"
+    local crush_db="$work_dir/.crush/crush.db"
+
+    if [[ -f "$usage_log" ]]; then
+        # Claude CLI: sum across all invocations (initial + retries)
+        # input_tokens only counts non-cached tokens; include cache_creation + cache_read for total prompt
         local result
-        result=$(sqlite3 "$db" "SELECT COALESCE(SUM(prompt_tokens),0)||'|'||COALESCE(SUM(completion_tokens),0)||'|'||COALESCE(SUM(cost),0) FROM sessions" 2>/dev/null)
+        result=$(jq -s '{pt: ([.[] | .input_tokens + .cache_creation + .cache_read] | add), ct: ([.[].output_tokens] | add), cost: ([.[].cost] | add)} | "\(.pt)|\(.ct)|\(.cost)"' "$usage_log" 2>/dev/null)
+        # Strip quotes from jq string output
+        result="${result//\"/}"
+        echo "${result:-0|0|0}" > "$tokens_file"
+    elif [[ -f "$crush_db" ]] && command -v sqlite3 &>/dev/null; then
+        # Crush: read from SQLite
+        local result
+        result=$(sqlite3 "$crush_db" "SELECT COALESCE(SUM(prompt_tokens),0)||'|'||COALESCE(SUM(completion_tokens),0)||'|'||COALESCE(SUM(cost),0) FROM sessions" 2>/dev/null)
         echo "${result:-0|0|0}" > "$tokens_file"
     else
         echo "0|0|0" > "$tokens_file"
