@@ -366,6 +366,22 @@ run_agent() {
     fi
 }
 
+# Extract token counts from Crush's session database
+# Writes prompt_tokens|completion_tokens|cost to the tokens file
+extract_tokens() {
+    local work_dir="$1"
+    local tokens_file="$2"
+
+    local db="$work_dir/.crush/crush.db"
+    if [[ -f "$db" ]] && command -v sqlite3 &>/dev/null; then
+        local result
+        result=$(sqlite3 "$db" "SELECT COALESCE(SUM(prompt_tokens),0)||'|'||COALESCE(SUM(completion_tokens),0)||'|'||COALESCE(SUM(cost),0) FROM sessions" 2>/dev/null)
+        echo "${result:-0|0|0}" > "$tokens_file"
+    else
+        echo "0|0|0" > "$tokens_file"
+    fi
+}
+
 # Extract the key error from build output
 extract_error_summary() {
     local build_output="$1"
@@ -544,6 +560,10 @@ Work ONLY in $work_dir."
         echo -e "[$(date +%H:%M:%S)] $eval_id: ${RED}FAILED${NC} ($fail_reason) [$timing_info]"
     fi
 
+    # Extract token counts before cleanup
+    local tokens_file="$OUTPUT_DIR/$eval_id$suffix$backend_suffix.tokens"
+    extract_tokens "$work_dir" "$tokens_file"
+
     # Preserve workspace if failed OR not a one-shot
     if [[ $eval_passed -eq 0 ]] || [[ $attempt -gt 1 ]]; then
         local workspace_dir="$OUTPUT_DIR/$eval_id$suffix-workspace"
@@ -558,7 +578,7 @@ Work ONLY in $work_dir."
 }
 
 # Export functions and variables for parallel execution
-export -f run_evaluation setup_project extract_error_summary run_agent run_with_claude run_with_crush kill_tree run_with_timeout
+export -f run_evaluation setup_project extract_error_summary extract_tokens run_agent run_with_claude run_with_crush kill_tree run_with_timeout
 export SCRIPT_DIR OUTPUT_DIR BASE_TEMPLATE WORK_BASE USE_SKILL MAX_RETRIES EVAL_TIMEOUT BACKEND USE_GATEWAY CRUSH_CONFIG_DIR
 export RED GREEN YELLOW BLUE CYAN NC
 
@@ -672,17 +692,40 @@ main() {
         wait "$pid" 2>/dev/null || true
     done
 
+    # Helper: format token count as human-readable (e.g., 31198 -> "31.2K")
+    format_tokens() {
+        local n="$1"
+        if [[ "$n" -ge 1000000 ]]; then
+            printf "%.1fM" "$(echo "$n / 1000000" | bc -l)"
+        elif [[ "$n" -ge 1000 ]]; then
+            printf "%.1fK" "$(echo "$n / 1000" | bc -l)"
+        else
+            echo "$n"
+        fi
+    }
+
     # Collect results into arrays for grouped reporting
     local passed=0 failed=0 one_shot=0 total_run=0
+    local total_prompt_tokens=0 total_completion_tokens=0
     local -a success_oneshot=()
     local -a success_retry=()    # "eval_id|attempts|timing"
     local -a failure_list=()     # "eval_id|reason|details"
+    local -a token_rows=()       # "eval_id|status|prompt|completion|cost"
 
     for idx in "${evals_to_run[@]}"; do
         local eval_id=$(jq -r ".[$idx].id" "$EVAL_FILE")
         local eval_name=$(jq -r ".[$idx].name" "$EVAL_FILE")
         local result_file="$OUTPUT_DIR/$eval_id$suffix$backend_suffix.result"
+        local tokens_file="$OUTPUT_DIR/$eval_id$suffix$backend_suffix.tokens"
         ((total_run++))
+
+        # Read token counts
+        local pt=0 ct=0 cost="0"
+        if [[ -f "$tokens_file" ]]; then
+            IFS='|' read -r pt ct cost < "$tokens_file"
+        fi
+        total_prompt_tokens=$((total_prompt_tokens + pt))
+        total_completion_tokens=$((total_completion_tokens + ct))
 
         if [[ -f "$result_file" ]]; then
             local result=$(cat "$result_file")
@@ -690,13 +733,14 @@ main() {
             local attempt=$(echo "$result" | cut -d'|' -f3)
             local timing=$(echo "$result" | rev | cut -d'|' -f1 | rev)
 
+            token_rows+=("$eval_id|$status|$pt|$ct|$cost")
+
             if [[ "$status" == "PASS" ]]; then
                 ((passed++))
                 if [[ "$attempt" == "1" ]]; then
                     ((one_shot++))
                     success_oneshot+=("$eval_id ($eval_name)")
                 else
-                    # Collect retry error details
                     local retry_errors=$(echo "$result" | cut -d'|' -f4)
                     success_retry+=("$eval_id ($eval_name)|$attempt|$timing|$retry_errors")
                 fi
@@ -712,6 +756,7 @@ main() {
             fi
         else
             ((failed++))
+            token_rows+=("$eval_id|TIMEOUT|$pt|$ct|$cost")
             failure_list+=("$eval_id ($eval_name)|timeout|Exceeded ${EVAL_TIMEOUT}s limit|")
         fi
     done
@@ -746,7 +791,6 @@ main() {
             local retry_errors=$(echo "$entry" | cut -d'|' -f4)
             echo -e "    ${YELLOW}✓${NC} $name — ${YELLOW}$attempts attempts${NC} [$timing]"
             if [[ -n "$retry_errors" ]]; then
-                # Split retry errors (pipe-separated within the field, comma-separated here)
                 echo -e "      ${CYAN}retry errors: $retry_errors${NC}"
             fi
         done
@@ -776,11 +820,41 @@ main() {
         done
     fi
 
+    # --- Token Usage ---
+    echo "TOKEN USAGE:"
+    echo "-----------------"
+    printf "  %-40s  %8s  %10s  %12s  %8s\n" "Evaluation" "Status" "Prompt" "Completion" "Cost"
+    printf "  %-40s  %8s  %10s  %12s  %8s\n" "$(printf '%0.s─' {1..40})" "$(printf '%0.s─' {1..8})" "$(printf '%0.s─' {1..10})" "$(printf '%0.s─' {1..12})" "$(printf '%0.s─' {1..8})"
+
+    for row in "${token_rows[@]}"; do
+        local t_id=$(echo "$row" | cut -d'|' -f1)
+        local t_status=$(echo "$row" | cut -d'|' -f2)
+        local t_pt=$(echo "$row" | cut -d'|' -f3)
+        local t_ct=$(echo "$row" | cut -d'|' -f4)
+        local t_cost=$(echo "$row" | cut -d'|' -f5)
+
+        local status_color="$GREEN"
+        [[ "$t_status" != "PASS" ]] && status_color="$RED"
+        local cost_fmt=$(printf "\$%.2f" "$t_cost")
+
+        printf "  %-40s  " "$t_id"
+        echo -ne "${status_color}$(printf '%8s' "$t_status")${NC}"
+        printf "  %10s  %12s  %8s\n" "$(format_tokens "$t_pt")" "$(format_tokens "$t_ct")" "$cost_fmt"
+    done
+
+    printf "  %-40s  %8s  %10s  %12s  %8s\n" "$(printf '%0.s─' {1..40})" "$(printf '%0.s─' {1..8})" "$(printf '%0.s─' {1..10})" "$(printf '%0.s─' {1..12})" "$(printf '%0.s─' {1..8})"
+
+    local total_tokens=$((total_prompt_tokens + total_completion_tokens))
+    printf "  %-40s  %8s  %10s  %12s\n" "TOTAL" "" "$(format_tokens "$total_prompt_tokens")" "$(format_tokens "$total_completion_tokens")"
+    echo -e "  Total tokens: ${CYAN}$(format_tokens $total_tokens)${NC} (prompt: $(format_tokens $total_prompt_tokens) + completion: $(format_tokens $total_completion_tokens))"
+    echo ""
+
     echo "============================================================"
     echo -e "Total: $total_run  |  ${GREEN}Passed: $passed${NC}  |  ${GREEN}One-shot: $one_shot${NC}  |  ${RED}Failed: $failed${NC}"
     if [[ $passed -gt 0 ]]; then
         echo -e "One-shot rate: ${GREEN}$(( one_shot * 100 / passed ))%${NC} of passes  |  ${GREEN}$(( one_shot * 100 / total_run ))%${NC} of total"
     fi
+    echo -e "Tokens: ${CYAN}$(format_tokens $total_tokens)${NC} (prompt: $(format_tokens $total_prompt_tokens) + completion: $(format_tokens $total_completion_tokens))"
     echo ""
     echo "Outputs: $OUTPUT_DIR"
 
