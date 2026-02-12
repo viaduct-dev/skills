@@ -716,25 +716,13 @@ main() {
         wait "$pid" 2>/dev/null || true
     done
 
-    # Helper: format token count as human-readable (e.g., 31198 -> "31.2K")
-    format_tokens() {
-        local n="$1"
-        if [[ "$n" -ge 1000000 ]]; then
-            printf "%.1fM" "$(echo "$n / 1000000" | bc -l)"
-        elif [[ "$n" -ge 1000 ]]; then
-            printf "%.1fK" "$(echo "$n / 1000" | bc -l)"
-        else
-            echo "$n"
-        fi
-    }
-
     # Collect results into arrays for grouped reporting
     local passed=0 failed=0 one_shot=0 total_run=0
-    local total_prompt_tokens=0 total_completion_tokens=0
     local -a success_oneshot=()
     local -a success_retry=()    # "eval_id|attempts|timing"
     local -a failure_list=()     # "eval_id|reason|details"
-    local -a token_rows=()       # "eval_id|status|prompt|completion|cost"
+    local -a cost_rows=()        # "eval_id|status|cost"
+    local total_cost="0"
 
     for idx in "${evals_to_run[@]}"; do
         local eval_id=$(jq -r ".[$idx].id" "$EVAL_FILE")
@@ -743,13 +731,12 @@ main() {
         local tokens_file="$OUTPUT_DIR/$eval_id$suffix$backend_suffix.tokens"
         ((total_run++))
 
-        # Read token counts
-        local pt=0 ct=0 cost="0"
+        # Read cost from tokens file (format: prompt|completion|cost)
+        local cost="0"
         if [[ -f "$tokens_file" ]]; then
-            IFS='|' read -r pt ct cost < "$tokens_file"
+            cost=$(cut -d'|' -f3 < "$tokens_file")
         fi
-        total_prompt_tokens=$((total_prompt_tokens + pt))
-        total_completion_tokens=$((total_completion_tokens + ct))
+        total_cost=$(echo "$total_cost + $cost" | bc -l)
 
         if [[ -f "$result_file" ]]; then
             local result=$(cat "$result_file")
@@ -757,7 +744,7 @@ main() {
             local attempt=$(echo "$result" | cut -d'|' -f3)
             local timing=$(echo "$result" | rev | cut -d'|' -f1 | rev)
 
-            token_rows+=("$eval_id|$status|$pt|$ct|$cost")
+            cost_rows+=("$eval_id|$status|$cost")
 
             if [[ "$status" == "PASS" ]]; then
                 ((passed++))
@@ -780,7 +767,7 @@ main() {
             fi
         else
             ((failed++))
-            token_rows+=("$eval_id|TIMEOUT|$pt|$ct|$cost")
+            cost_rows+=("$eval_id|TIMEOUT|$cost")
             failure_list+=("$eval_id ($eval_name)|timeout|Exceeded ${EVAL_TIMEOUT}s limit|")
         fi
     done
@@ -844,18 +831,16 @@ main() {
         done
     fi
 
-    # --- Token Usage ---
-    echo "TOKEN USAGE:"
+    # --- Cost per evaluation ---
+    echo "COST:"
     echo "-----------------"
-    printf "  %-40s  %8s  %10s  %12s  %8s\n" "Evaluation" "Status" "Prompt" "Completion" "Cost"
-    printf "  %-40s  %8s  %10s  %12s  %8s\n" "$(printf '%0.s─' {1..40})" "$(printf '%0.s─' {1..8})" "$(printf '%0.s─' {1..10})" "$(printf '%0.s─' {1..12})" "$(printf '%0.s─' {1..8})"
+    printf "  %-40s  %8s  %8s\n" "Evaluation" "Status" "Cost"
+    printf "  %-40s  %8s  %8s\n" "$(printf '%0.s─' {1..40})" "$(printf '%0.s─' {1..8})" "$(printf '%0.s─' {1..8})"
 
-    for row in "${token_rows[@]}"; do
+    for row in "${cost_rows[@]}"; do
         local t_id=$(echo "$row" | cut -d'|' -f1)
         local t_status=$(echo "$row" | cut -d'|' -f2)
-        local t_pt=$(echo "$row" | cut -d'|' -f3)
-        local t_ct=$(echo "$row" | cut -d'|' -f4)
-        local t_cost=$(echo "$row" | cut -d'|' -f5)
+        local t_cost=$(echo "$row" | cut -d'|' -f3)
 
         local status_color="$GREEN"
         [[ "$t_status" != "PASS" ]] && status_color="$RED"
@@ -863,14 +848,12 @@ main() {
 
         printf "  %-40s  " "$t_id"
         echo -ne "${status_color}$(printf '%8s' "$t_status")${NC}"
-        printf "  %10s  %12s  %8s\n" "$(format_tokens "$t_pt")" "$(format_tokens "$t_ct")" "$cost_fmt"
+        printf "  %8s\n" "$cost_fmt"
     done
 
-    printf "  %-40s  %8s  %10s  %12s  %8s\n" "$(printf '%0.s─' {1..40})" "$(printf '%0.s─' {1..8})" "$(printf '%0.s─' {1..10})" "$(printf '%0.s─' {1..12})" "$(printf '%0.s─' {1..8})"
-
-    local total_tokens=$((total_prompt_tokens + total_completion_tokens))
-    printf "  %-40s  %8s  %10s  %12s\n" "TOTAL" "" "$(format_tokens "$total_prompt_tokens")" "$(format_tokens "$total_completion_tokens")"
-    echo -e "  Total tokens: ${CYAN}$(format_tokens $total_tokens)${NC} (prompt: $(format_tokens $total_prompt_tokens) + completion: $(format_tokens $total_completion_tokens))"
+    printf "  %-40s  %8s  %8s\n" "$(printf '%0.s─' {1..40})" "$(printf '%0.s─' {1..8})" "$(printf '%0.s─' {1..8})"
+    local total_cost_fmt=$(printf "\$%.2f" "$total_cost")
+    printf "  %-40s  %8s  %8s\n" "TOTAL" "" "$total_cost_fmt"
     echo ""
 
     echo "============================================================"
@@ -878,7 +861,7 @@ main() {
     if [[ $passed -gt 0 ]]; then
         echo -e "One-shot rate: ${GREEN}$(( one_shot * 100 / passed ))%${NC} of passes  |  ${GREEN}$(( one_shot * 100 / total_run ))%${NC} of total"
     fi
-    echo -e "Tokens: ${CYAN}$(format_tokens $total_tokens)${NC} (prompt: $(format_tokens $total_prompt_tokens) + completion: $(format_tokens $total_completion_tokens))"
+    echo -e "Cost: ${CYAN}$total_cost_fmt${NC}"
     echo ""
     echo "Outputs: $OUTPUT_DIR"
 
