@@ -1,4 +1,4 @@
-# Base schema - evals will append their types here
+# Viaduct schema
 
 extend type Query {
     hello: String! @resolver
