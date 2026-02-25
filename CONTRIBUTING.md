@@ -2,9 +2,28 @@
 
 ## Prerequisites
 
+### Option 1: Using mise (Recommended)
+
+[mise](https://mise.jdx.dev/) automatically manages all dependencies:
+
+```bash
+# Install mise (if not already installed)
+curl https://mise.run | sh
+
+# Install all dependencies
+mise install
+
+# Run evaluations
+mise run test
+```
+
+### Option 2: Manual Installation
+
 - Node.js 18+
 - Java 17+
-- [Claude CLI](https://github.com/anthropics/claude-code) (`npm install -g @anthropic-ai/claude-code`)
+- AI CLI (one of):
+  - [Crush](https://github.com/charmbracelet/crush) (`brew install charmbracelet/tap/crush`) - default backend, lightweight
+  - [Claude CLI](https://github.com/anthropics/claude-code) (`npm install -g @anthropic-ai/claude-code`) - alternative
 - jq (`brew install jq` on macOS)
 
 ## Authentication
@@ -23,13 +42,26 @@ If you have access to Airbnb's internal gateway, the script will automatically u
 
 ## Running Evaluations
 
-The `test/` directory contains an evaluation harness to test skill effectiveness.
+### Using mise (Recommended)
+
+```bash
+mise run test              # Run all 10 evaluations in parallel with Crush
+mise run test:claude       # Run with Claude CLI backend
+mise run test:sequential   # Run one at a time (for debugging)
+mise run test:no-skill     # Run without skills (baseline)
+mise run test -- eval-01   # Run specific evaluation
+```
+
+### Using the script directly
 
 ```bash
 cd test
-./run-evaluations.sh              # Run all evaluations
+./run-evaluations.sh              # Run all evaluations (parallel, Crush)
+./run-evaluations.sh --claude     # Run with Claude CLI backend
 ./run-evaluations.sh eval-01      # Run specific evaluation
 ./run-evaluations.sh --no-skill   # Run without skills (baseline)
+./run-evaluations.sh --parallel=6 # Run 6 evaluations concurrently
+./run-evaluations.sh --sequential # Run one at a time (for debugging)
 ```
 
 ### Options
@@ -38,6 +70,11 @@ cd test
 |--------|-------------|
 | `--skill` | Run with skill documentation (default) |
 | `--no-skill` | Run without skills for baseline comparison |
+| `--parallel=N` | Run N evaluations concurrently (default: 10 for Crush, 4 for Claude) |
+| `--sequential` | Run evaluations one at a time |
+| `--backend=X` | Use `crush` (default) or `claude` as the AI backend |
+| `--crush` | Shorthand for `--backend=crush` (default) |
+| `--claude` | Shorthand for `--backend=claude` |
 | `<eval-id>` | Filter to run specific evaluation(s) |
 
 ### Environment Variables
@@ -46,6 +83,30 @@ cd test
 |----------|---------|-------------|
 | `ANTHROPIC_API_KEY` | - | Anthropic API key for Claude access |
 | `MAX_RETRIES` | 3 | Max build/fix retry attempts |
+| `MAX_PARALLEL` | 10/4 | Max concurrent evaluations (10 for Crush, 4 for Claude) |
+| `BACKEND` | crush | AI backend to use (`crush` or `claude`) |
+
+### AI Backends
+
+The harness supports two AI backends:
+
+| Backend | Memory/Process | Default Parallelism | Install |
+|---------|---------------|---------------------|---------|
+| Claude CLI | ~800 MB | 4 | `npm install -g @anthropic-ai/claude-code` |
+| Crush | ~165 MB | 10 | `brew install charmbracelet/tap/crush` |
+
+**Crush** is a lightweight Go-based AI coding assistant that uses ~80% less memory than Claude CLI, enabling higher parallelism on the same hardware.
+
+### Performance & Resource Usage
+
+| Backend | Parallelism | Memory | Wall Time (10 evals) |
+|---------|-------------|--------|----------------------|
+| Claude CLI | 1 (sequential) | ~800 MB | ~28 min |
+| Claude CLI | 4 | ~3.2 GB | ~8 min |
+| Claude CLI | 6 | ~4.8 GB | ~6 min |
+| Crush | 10 | ~1.6 GB | ~4.5 min |
+
+The harness pre-warms the Gradle daemon and uses unique workspaces per evaluation to enable safe parallel execution. Different backends and modes can run simultaneously without conflicts.
 
 ### Output
 
@@ -53,10 +114,12 @@ Evaluation outputs are saved to `test/.eval-outputs/`:
 
 | File | Description |
 |------|-------------|
-| `<eval-id>-claude.txt` | Claude's responses |
+| `<eval-id>-agent.txt` | AI agent's responses |
 | `<eval-id>-build.txt` | Gradle build output |
 | `<eval-id>-errors.txt` | Error summary |
 | `<eval-id>-workspace/` | Full workspace (preserved on failure or retry) |
+
+Files include backend suffix (e.g., `-crush`) when using non-default backend.
 
 ## Adding Evaluations
 

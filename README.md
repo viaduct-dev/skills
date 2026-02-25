@@ -19,7 +19,7 @@ Replace `myapp` with your project name.
 Or, if you have Node.js installed:
 
 ```bash
-npx @viaduct-dev/skills
+npx github:viaduct-dev/skills
 ```
 
 This will:

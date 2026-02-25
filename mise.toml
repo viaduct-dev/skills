@@ -1,0 +1,44 @@
+# mise.toml - Development environment configuration
+# Install dependencies with: mise install
+# Run evaluations with: mise run test
+
+[env]
+# Block Crush's remote provider fetch to use local gateway config
+CATWALK_URL = "http://localhost:1"
+
+[tools]
+# Runtime dependencies
+node = "18"
+java = "temurin-17"
+
+# CLI tools
+"ubi:jqlang/jq" = "jq-1.7.1"
+"ubi:charmbracelet/crush" = "0.41.0"
+
+[tasks.test]
+description = "Run all evaluations with Crush (10 parallel)"
+dir = "test"
+run = "./run-evaluations.sh"
+
+[tasks."test:claude"]
+description = "Run all evaluations with Claude CLI (4 parallel)"
+dir = "test"
+run = "./run-evaluations.sh --claude"
+
+[tasks."test:sequential"]
+description = "Run evaluations one at a time (for debugging)"
+dir = "test"
+run = "./run-evaluations.sh --sequential"
+
+[tasks."test:no-skill"]
+description = "Run evaluations without skills (baseline)"
+dir = "test"
+run = "./run-evaluations.sh --no-skill"
+
+[tasks.install-docs]
+description = "Install Viaduct documentation to current directory"
+run = "node bin/install.js"
+
+[tasks.fmt]
+description = "Format mise.toml"
+run = "mise fmt"

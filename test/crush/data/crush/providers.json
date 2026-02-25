@@ -1,0 +1,487 @@
+[
+  {
+    "name": "Anthropic",
+    "id": "anthropic",
+    "api_key": "$ANTHROPIC_API_KEY",
+    "api_endpoint": "$ANTHROPIC_API_ENDPOINT",
+    "type": "anthropic",
+    "default_large_model_id": "global.anthropic.claude-sonnet-4-5-20250929-v1:0",
+    "default_small_model_id": "global.anthropic.claude-haiku-4-5-20251001-v1:0",
+    "models": [
+      {
+        "id": "global.anthropic.claude-sonnet-4-5-20250929-v1:0",
+        "name": "Claude Sonnet 4.5",
+        "cost_per_1m_in": 3,
+        "cost_per_1m_out": 15,
+        "cost_per_1m_in_cached": 3.75,
+        "cost_per_1m_out_cached": 0.3,
+        "context_window": 200000,
+        "default_max_tokens": 50000,
+        "can_reason": true,
+        "supports_attachments": true,
+        "options": {}
+      },
+      {
+        "id": "global.anthropic.claude-opus-4-6-v1:0",
+        "name": "Claude Opus 4.6",
+        "cost_per_1m_in": 5,
+        "cost_per_1m_out": 25,
+        "cost_per_1m_in_cached": 6.25,
+        "cost_per_1m_out_cached": 0.5,
+        "context_window": 200000,
+        "default_max_tokens": 126000,
+        "can_reason": true,
+        "supports_attachments": true,
+        "options": {}
+      },
+      {
+        "id": "global.anthropic.claude-opus-4-5-20251101-v1:0",
+        "name": "Claude Opus 4.5",
+        "cost_per_1m_in": 5,
+        "cost_per_1m_out": 25,
+        "cost_per_1m_in_cached": 6.25,
+        "cost_per_1m_out_cached": 0.5,
+        "context_window": 200000,
+        "default_max_tokens": 50000,
+        "can_reason": true,
+        "supports_attachments": true,
+        "options": {}
+      },
+      {
+        "id": "global.anthropic.claude-haiku-4-5-20251001-v1:0",
+        "name": "Claude 4.5 Haiku",
+        "cost_per_1m_in": 1,
+        "cost_per_1m_out": 5,
+        "cost_per_1m_in_cached": 1.25,
+        "cost_per_1m_out_cached": 0.09999999999999999,
+        "context_window": 200000,
+        "default_max_tokens": 32000,
+        "can_reason": true,
+        "supports_attachments": true,
+        "options": {}
+      },
+      {
+        "id": "global.anthropic.claude-opus-4-1-20250805-v1:0",
+        "name": "Claude Opus 4.1",
+        "cost_per_1m_in": 15,
+        "cost_per_1m_out": 75,
+        "cost_per_1m_in_cached": 18.75,
+        "cost_per_1m_out_cached": 1.5,
+        "context_window": 200000,
+        "default_max_tokens": 32000,
+        "can_reason": true,
+        "supports_attachments": true,
+        "options": {}
+      },
+      {
+        "id": "global.anthropic.claude-opus-4-20250514-v1:0",
+        "name": "Claude Opus 4",
+        "cost_per_1m_in": 15,
+        "cost_per_1m_out": 75,
+        "cost_per_1m_in_cached": 18.75,
+        "cost_per_1m_out_cached": 1.5,
+        "context_window": 200000,
+        "default_max_tokens": 32000,
+        "can_reason": true,
+        "supports_attachments": true,
+        "options": {}
+      },
+      {
+        "id": "global.anthropic.claude-sonnet-4-20250514-v1:0",
+        "name": "Claude Sonnet 4",
+        "cost_per_1m_in": 3,
+        "cost_per_1m_out": 15,
+        "cost_per_1m_in_cached": 3.75,
+        "cost_per_1m_out_cached": 0.3,
+        "context_window": 200000,
+        "default_max_tokens": 50000,
+        "can_reason": true,
+        "supports_attachments": true,
+        "options": {}
+      },
+      {
+        "id": "global.anthropic.claude-3-7-sonnet-20250219-v1:0",
+        "name": "Claude 3.7 Sonnet",
+        "cost_per_1m_in": 3,
+        "cost_per_1m_out": 15,
+        "cost_per_1m_in_cached": 3.75,
+        "cost_per_1m_out_cached": 0.3,
+        "context_window": 200000,
+        "default_max_tokens": 50000,
+        "can_reason": true,
+        "supports_attachments": true,
+        "options": {}
+      },
+      {
+        "id": "global.anthropic.claude-3-5-haiku-20241022-v1:0",
+        "name": "Claude 3.5 Haiku",
+        "cost_per_1m_in": 0.7999999999999999,
+        "cost_per_1m_out": 4,
+        "cost_per_1m_in_cached": 1,
+        "cost_per_1m_out_cached": 0.08,
+        "context_window": 200000,
+        "default_max_tokens": 5000,
+        "can_reason": false,
+        "supports_attachments": true,
+        "options": {}
+      },
+      {
+        "id": "global.anthropic.claude-3-5-sonnet-20240620-v1:0",
+        "name": "Claude 3.5 Sonnet (Old)",
+        "cost_per_1m_in": 3,
+        "cost_per_1m_out": 15,
+        "cost_per_1m_in_cached": 3.75,
+        "cost_per_1m_out_cached": 0.3,
+        "context_window": 200000,
+        "default_max_tokens": 5000,
+        "can_reason": false,
+        "supports_attachments": true,
+        "options": {}
+      },
+      {
+        "id": "global.anthropic.claude-3-5-sonnet-20241022-v1:0",
+        "name": "Claude 3.5 Sonnet (New)",
+        "cost_per_1m_in": 3,
+        "cost_per_1m_out": 15,
+        "cost_per_1m_in_cached": 3.75,
+        "cost_per_1m_out_cached": 0.3,
+        "context_window": 200000,
+        "default_max_tokens": 5000,
+        "can_reason": false,
+        "supports_attachments": true,
+        "options": {}
+      }
+    ]
+  },
+  {
+    "name": "OpenAI",
+    "id": "openai",
+    "api_key": "$OPENAI_API_KEY",
+    "api_endpoint": "$OPENAI_API_ENDPOINT",
+    "type": "openai",
+    "default_large_model_id": "gpt-5.1-codex",
+    "default_small_model_id": "gpt-4o",
+    "models": []
+  },
+  {
+    "name": "Google Gemini",
+    "id": "gemini",
+    "api_key": "$GEMINI_API_KEY",
+    "api_endpoint": "$GEMINI_API_ENDPOINT",
+    "type": "google",
+    "default_large_model_id": "gemini-2.5-pro",
+    "default_small_model_id": "gemini-2.5-flash",
+    "models": []
+  },
+  {
+    "name": "Azure OpenAI",
+    "id": "azure",
+    "api_key": "$AZURE_OPENAI_API_KEY",
+    "api_endpoint": "$AZURE_OPENAI_API_ENDPOINT",
+    "type": "azure",
+    "default_large_model_id": "gpt-5",
+    "default_small_model_id": "gpt-5-mini",
+    "models": []
+  },
+  {
+    "name": "AWS Bedrock",
+    "id": "bedrock",
+    "type": "bedrock",
+    "default_large_model_id": "anthropic.claude-sonnet-4-5-20250929-v1:0",
+    "default_small_model_id": "anthropic.claude-3-5-haiku-20241022-v1:0",
+    "models": [
+      {
+        "id": "anthropic.claude-sonnet-4-5-20250929-v1:0",
+        "name": "AWS Claude Sonnet 4.5",
+        "cost_per_1m_in": 3,
+        "cost_per_1m_out": 15,
+        "cost_per_1m_in_cached": 3.75,
+        "cost_per_1m_out_cached": 0.3,
+        "context_window": 200000,
+        "default_max_tokens": 50000,
+        "can_reason": true,
+        "supports_attachments": true,
+        "options": {}
+      },
+      {
+        "id": "anthropic.claude-haiku-4-5-20251001-v1:0",
+        "name": "AWS Claude Haiku 4.5",
+        "cost_per_1m_in": 0.8,
+        "cost_per_1m_out": 4,
+        "cost_per_1m_in_cached": 1,
+        "cost_per_1m_out_cached": 0.08,
+        "context_window": 200000,
+        "default_max_tokens": 50000,
+        "can_reason": false,
+        "supports_attachments": true,
+        "options": {}
+      },
+      {
+        "id": "anthropic.claude-opus-4-6-v1",
+        "name": "AWS Claude Opus 4.6",
+        "cost_per_1m_in": 5,
+        "cost_per_1m_out": 25,
+        "cost_per_1m_in_cached": 6.25,
+        "cost_per_1m_out_cached": 0.5,
+        "context_window": 200000,
+        "default_max_tokens": 50000,
+        "can_reason": true,
+        "supports_attachments": true,
+        "options": {}
+      },
+      {
+        "id": "anthropic.claude-opus-4-5-20251101-v1:0",
+        "name": "AWS Claude Opus 4.5",
+        "cost_per_1m_in": 5,
+        "cost_per_1m_out": 25,
+        "cost_per_1m_in_cached": 6.25,
+        "cost_per_1m_out_cached": 0.5,
+        "context_window": 200000,
+        "default_max_tokens": 50000,
+        "can_reason": true,
+        "supports_attachments": true,
+        "options": {}
+      },
+      {
+        "id": "anthropic.claude-opus-4-1-20250805-v1:0",
+        "name": "AWS Claude Opus 4.1",
+        "cost_per_1m_in": 15,
+        "cost_per_1m_out": 75,
+        "cost_per_1m_in_cached": 18.75,
+        "cost_per_1m_out_cached": 1.5,
+        "context_window": 200000,
+        "default_max_tokens": 50000,
+        "can_reason": true,
+        "supports_attachments": true,
+        "options": {}
+      },
+      {
+        "id": "anthropic.claude-opus-4-20250514-v1:0",
+        "name": "AWS Claude Opus 4",
+        "cost_per_1m_in": 15,
+        "cost_per_1m_out": 75,
+        "cost_per_1m_in_cached": 18.75,
+        "cost_per_1m_out_cached": 1.5,
+        "context_window": 200000,
+        "default_max_tokens": 50000,
+        "can_reason": true,
+        "supports_attachments": true,
+        "options": {}
+      },
+      {
+        "id": "anthropic.claude-sonnet-4-20250514-v1:0",
+        "name": "AWS Claude Sonnet 4",
+        "cost_per_1m_in": 3,
+        "cost_per_1m_out": 15,
+        "cost_per_1m_in_cached": 3.75,
+        "cost_per_1m_out_cached": 0.3,
+        "context_window": 200000,
+        "default_max_tokens": 50000,
+        "can_reason": true,
+        "supports_attachments": true,
+        "options": {}
+      },
+      {
+        "id": "anthropic.claude-3-7-sonnet-20250219-v1:0",
+        "name": "AWS Claude 3.7 Sonnet",
+        "cost_per_1m_in": 3,
+        "cost_per_1m_out": 15,
+        "cost_per_1m_in_cached": 3.75,
+        "cost_per_1m_out_cached": 0.3,
+        "context_window": 200000,
+        "default_max_tokens": 50000,
+        "can_reason": true,
+        "supports_attachments": true,
+        "options": {}
+      },
+      {
+        "id": "anthropic.claude-3-5-haiku-20241022-v1:0",
+        "name": "AWS Claude 3.5 Haiku",
+        "cost_per_1m_in": 0.7999999999999999,
+        "cost_per_1m_out": 4,
+        "cost_per_1m_in_cached": 1,
+        "cost_per_1m_out_cached": 0.08,
+        "context_window": 200000,
+        "default_max_tokens": 50000,
+        "can_reason": false,
+        "supports_attachments": true,
+        "options": {}
+      }
+    ]
+  },
+  {
+    "name": "Google Vertex AI",
+    "id": "vertexai",
+    "type": "google-vertex",
+    "default_large_model_id": "gemini-2.5-pro",
+    "default_small_model_id": "gemini-2.5-flash",
+    "models": []
+  },
+  {
+    "name": "xAI",
+    "id": "xai",
+    "api_key": "$XAI_API_KEY",
+    "api_endpoint": "https://api.x.ai/v1",
+    "type": "openai-compat",
+    "default_large_model_id": "grok-code-fast",
+    "default_small_model_id": "grok-3-mini",
+    "models": []
+  },
+  {
+    "name": "Z.AI",
+    "id": "zai",
+    "api_key": "$ZAI_API_KEY",
+    "api_endpoint": "https://api.z.ai/api/coding/paas/v4",
+    "type": "openai-compat",
+    "default_large_model_id": "glm-4.7",
+    "default_small_model_id": "glm-4.7-flash",
+    "models": []
+  },
+  {
+    "name": "Kimi Coding",
+    "id": "kimi-coding",
+    "api_key": "$KIMI_CODING_API_KEY",
+    "api_endpoint": "https://api.kimi.com/coding",
+    "type": "anthropic",
+    "default_large_model_id": "kimi-for-coding",
+    "default_small_model_id": "kimi-for-coding",
+    "models": []
+  },
+  {
+    "name": "Groq",
+    "id": "groq",
+    "api_key": "$GROQ_API_KEY",
+    "api_endpoint": "https://api.groq.com/openai/v1",
+    "type": "openai-compat",
+    "default_large_model_id": "moonshotai/kimi-k2-instruct-0905",
+    "default_small_model_id": "qwen/qwen3-32b",
+    "models": []
+  },
+  {
+    "name": "OpenRouter",
+    "id": "openrouter",
+    "api_key": "$OPENROUTER_API_KEY",
+    "api_endpoint": "https://openrouter.ai/api/v1",
+    "type": "openrouter",
+    "default_large_model_id": "anthropic/claude-sonnet-4",
+    "default_small_model_id": "anthropic/claude-3.5-haiku",
+    "models": [],
+    "default_headers": {
+      "HTTP-Referer": "https://charm.land",
+      "X-Title": "Crush"
+    }
+  },
+  {
+    "name": "Cerebras",
+    "id": "cerebras",
+    "api_key": "$CEREBRAS_API_KEY",
+    "api_endpoint": "https://api.cerebras.ai/v1",
+    "type": "openai-compat",
+    "default_large_model_id": "gpt-oss-120b",
+    "default_small_model_id": "qwen-3-32b",
+    "models": [],
+    "default_headers": {
+      "X-Cerebras-3rd-Party-Integration": "crush"
+    }
+  },
+  {
+    "name": "Venice AI",
+    "id": "venice",
+    "api_key": "$VENICE_API_KEY",
+    "api_endpoint": "https://api.venice.ai/api/v1",
+    "type": "openai-compat",
+    "default_large_model_id": "qwen3-235b:strip_thinking_response=true",
+    "default_small_model_id": "mistral-31-24b",
+    "models": []
+  },
+  {
+    "name": "Chutes",
+    "id": "chutes",
+    "api_key": "$CHUTES_API_KEY",
+    "api_endpoint": "https://llm.chutes.ai/v1",
+    "type": "openai-compat",
+    "default_large_model_id": "Qwen/Qwen3-Coder-480B-A35B-Instruct-FP8",
+    "default_small_model_id": "Qwen/Qwen3-Coder-480B-A35B-Instruct-FP8",
+    "models": []
+  },
+  {
+    "name": "DeepSeek",
+    "id": "deepseek",
+    "api_key": "$DEEPSEEK_API_KEY",
+    "api_endpoint": "https://api.deepseek.com/v1",
+    "type": "openai-compat",
+    "default_large_model_id": "deepseek-reasoner",
+    "default_small_model_id": "deepseek-chat",
+    "models": []
+  },
+  {
+    "name": "Hugging Face",
+    "id": "huggingface",
+    "api_key": "$HF_TOKEN",
+    "api_endpoint": "https://router.huggingface.co/v1",
+    "type": "openai-compat",
+    "default_large_model_id": "moonshotai/Kimi-K2-Instruct-0905:groq",
+    "default_small_model_id": "openai/gpt-oss-20b:groq",
+    "models": [],
+    "default_headers": {
+      "HTTP-Referer": "https://charm.land",
+      "X-Title": "Crush"
+    }
+  },
+  {
+    "name": "AIHubMix",
+    "id": "aihubmix",
+    "api_key": "$AIHUBMIX_API_KEY",
+    "api_endpoint": "https://aihubmix.com/v1",
+    "type": "openai-compat",
+    "default_large_model_id": "claude-sonnet-4-5",
+    "default_small_model_id": "claude-3-5-haiku",
+    "models": [],
+    "default_headers": {
+      "APP-Code": "IUFF7106"
+    }
+  },
+  {
+    "name": "Synthetic",
+    "id": "synthetic",
+    "api_key": "$SYNTHETIC_API_KEY",
+    "api_endpoint": "https://api.synthetic.new/openai/v1",
+    "type": "openai-compat",
+    "default_large_model_id": "hf:zai-org/GLM-4.7",
+    "default_small_model_id": "hf:deepseek-ai/DeepSeek-V3.1-Terminus",
+    "models": []
+  },
+  {
+    "name": "GitHub Copilot",
+    "id": "copilot",
+    "api_endpoint": "https://api.githubcopilot.com",
+    "type": "openai-compat",
+    "default_large_model_id": "claude-opus-4.6",
+    "default_small_model_id": "claude-haiku-4.5",
+    "models": []
+  },
+  {
+    "name": "Vercel",
+    "id": "vercel",
+    "api_key": "$VERCEL_API_KEY",
+    "api_endpoint": "https://ai-gateway.vercel.sh/v1",
+    "type": "vercel",
+    "default_large_model_id": "anthropic/claude-sonnet-4",
+    "default_small_model_id": "anthropic/claude-haiku-4.5",
+    "models": [],
+    "default_headers": {
+      "HTTP-Referer": "https://charm.land",
+      "X-Title": "Crush"
+    }
+  },
+  {
+    "name": "MiniMax",
+    "id": "minimax",
+    "api_key": "$MINIMAX_API_KEY",
+    "api_endpoint": "https://api.minimax.io/anthropic",
+    "type": "anthropic",
+    "default_large_model_id": "MiniMax-M2.1",
+    "default_small_model_id": "MiniMax-M2.1",
+    "models": []
+  }
+]
