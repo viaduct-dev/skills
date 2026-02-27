@@ -133,7 +133,6 @@
     "id": "gotcha-01-missing-idof-input",
     "name": "Gotcha: Input Type Missing @idOf",
     "skills": ["viaduct-mutations"],
-    "schema": "type Task implements Node @resolver @scope(to: [\"default\"]) {\n    id: ID!\n    title: String!\n    completed: Boolean!\n}\n\ninput UpdateTaskInput {\n    id: ID!\n    title: String\n    completed: Boolean\n}\n\nextend type Mutation {\n    updateTask(input: UpdateTaskInput!): Task! @resolver\n}",
     "query": "Implement the updateTask mutation. The resolver MUST extract the task ID from input.id and log it. Return mock data using that ID. Use the viaduct skill for guidance.",
     "expected_behavior": [
       "Recognizes @idOf is missing from UpdateTaskInput.id",
@@ -156,7 +155,6 @@
     "id": "gotcha-02-missing-idof-query-arg",
     "name": "Gotcha: Query Argument Missing @idOf",
     "skills": ["viaduct-query-resolver"],
-    "schema": "type Project implements Node @resolver @scope(to: [\"default\"]) {\n    id: ID!\n    name: String!\n    description: String\n}\n\nextend type Query {\n    project(id: ID!): Project @resolver\n}",
     "query": "I need to fetch a single project by ID. Implement the project query resolver. Return hardcoded data. Use the viaduct skill for guidance.",
     "expected_behavior": [
       "Recognizes @idOf is missing from query argument",
@@ -179,7 +177,6 @@
     "id": "gotcha-03-globalid-response",
     "name": "Gotcha: Building GlobalID for Response",
     "skills": ["viaduct-mutations"],
-    "schema": "type Item implements Node @resolver @scope(to: [\"default\"]) {\n    id: ID!\n    name: String!\n    quantity: Int!\n}\n\ninput CreateItemInput {\n    name: String!\n    quantity: Int!\n}\n\nextend type Mutation {\n    createItem(input: CreateItemInput!): Item! @resolver\n}",
     "query": "Implement the createItem mutation. Generate a UUID for the new item and return it with the input values. Use the viaduct skill for guidance.",
     "expected_behavior": [
       "Uses ctx.globalIDFor(Item.Reflection, uuid) to create GlobalID",

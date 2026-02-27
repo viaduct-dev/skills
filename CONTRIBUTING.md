@@ -129,14 +129,12 @@ Evaluations are defined in `test/evaluations.json`:
 {
   "id": "eval-XX",
   "name": "Description of what's being tested",
-  "schema": "type Foo { ... }",
   "query": "Implement a resolver for...",
   "verify_patterns": ["pattern1", "pattern2"],
   "negative_patterns": ["pattern-that-should-not-appear"]
 }
 ```
 
-- **schema**: GraphQL types appended to the base schema
 - **query**: The prompt given to Claude
 - **verify_patterns**: Regex patterns that MUST appear in the generated code
 - **negative_patterns**: Regex patterns that must NOT appear (catches workarounds)
