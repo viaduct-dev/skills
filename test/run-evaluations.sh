@@ -5,10 +5,9 @@
 # Runs evaluations against the viaduct skill.
 # Each evaluation:
 #   1. Copies base-template to unique temp directory
-#   2. Appends eval-specific schema types
-#   3. Runs Gradle to generate scaffolding
-#   4. Runs AI agent (Claude CLI or Crush) to implement the feature
-#   5. Builds and verifies patterns
+#   2. Runs Gradle to generate scaffolding
+#   3. Runs AI agent (Claude CLI or Crush) to implement the feature
+#   4. Builds and verifies patterns
 #
 # Usage:
 #   ./run-evaluations.sh [options] [eval-id]
@@ -228,18 +227,11 @@ prewarm_gradle() {
 
 setup_project() {
     local work_dir="$1"
-    local schema_addition="$2"
-    local eval_id="$3"
+    local eval_id="$2"
 
     # Clean and copy base template
     rm -rf "$work_dir"
     cp -r "$BASE_TEMPLATE" "$work_dir"
-
-    # Append schema types for this evaluation
-    if [[ -n "$schema_addition" ]]; then
-        echo "" >> "$work_dir/src/main/viaduct/schema/Schema.graphqls"
-        echo "$schema_addition" >> "$work_dir/src/main/viaduct/schema/Schema.graphqls"
-    fi
 
     # Generate scaffolding with Gradle (using daemon for speed)
     if ! (cd "$work_dir" && ./gradlew viaductCodegen --daemon -q 2>&1); then
@@ -300,10 +292,10 @@ run_with_claude() {
     local json_tmp="$work_dir/.claude-response.json"
     local usage_log="$work_dir/.claude-usage.jsonl"
 
-    local claude_args=(-p "$prompt" --output-format json --dangerously-skip-permissions --no-session-persistence "$work_dir")
+    local claude_args=(-p "$prompt" --output-format json --dangerously-skip-permissions --no-session-persistence --tools "Bash,Read,Write,Edit,Glob,Grep" --strict-mcp-config --disable-slash-commands)
 
     if [[ -n "$ANTHROPIC_API_KEY" ]]; then
-        claude "${claude_args[@]}" > "$json_tmp" 2>&1 || true
+        claude "${claude_args[@]}" --model claude-sonnet-4-5-20250929 "$work_dir" > "$json_tmp" 2>&1 || true
     elif command -v iap-auth &>/dev/null; then
         local auth_token
         auth_token=$(iap-auth https://devaigateway.a.musta.ch 2>/dev/null)
@@ -314,7 +306,7 @@ run_with_claude() {
         ANTHROPIC_BEDROCK_BASE_URL="https://devaigateway.a.musta.ch/bedrock" \
         CLAUDE_CODE_SKIP_BEDROCK_AUTH=1 \
         ANTHROPIC_AUTH_TOKEN="$auth_token" \
-        claude "${claude_args[@]}" > "$json_tmp" 2>&1 || true
+        claude "${claude_args[@]}" --model global.anthropic.claude-sonnet-4-5-20250929-v1:0 "$work_dir" > "$json_tmp" 2>&1 || true
     else
         return 1
     fi
@@ -322,7 +314,7 @@ run_with_claude() {
     # Extract agent text into output file, append usage to log
     if [[ -f "$json_tmp" ]] && jq -e '.result' "$json_tmp" &>/dev/null; then
         jq -r '.result // empty' "$json_tmp" >> "$output_file"
-        jq -c '{input_tokens: (.usage.input_tokens // 0), output_tokens: (.usage.output_tokens // 0), cache_creation: (.usage.cache_creation_input_tokens // 0), cache_read: (.usage.cache_read_input_tokens // 0), cost: (.total_cost_usd // 0)}' "$json_tmp" >> "$usage_log"
+        jq -c '{input_tokens: (.usage.input_tokens // 0), output_tokens: (.usage.output_tokens // 0), cache_creation: (.usage.cache_creation_input_tokens // 0), cache_read: (.usage.cache_read_input_tokens // 0), cost: (.total_cost_usd // 0), num_turns: (.num_turns // 0)}' "$json_tmp" >> "$usage_log"
     else
         # Fallback: non-JSON output (e.g., error messages)
         cat "$json_tmp" >> "$output_file" 2>/dev/null || true
@@ -432,8 +424,7 @@ run_evaluation() {
     local eval_name="$2"
     local eval_query="$3"
     local verify_patterns="$4"
-    local schema_addition="$5"
-    local negative_patterns="$6"
+    local negative_patterns="$5"
 
     local suffix=$([[ $USE_SKILL -eq 0 ]] && echo "-noskill" || echo "")
     local backend_suffix=$([[ "$BACKEND" == "crush" ]] && echo "-crush" || echo "")
@@ -449,9 +440,9 @@ run_evaluation() {
     local eval_start=$(date +%s)
     echo "[$(date +%H:%M:%S)] Starting: $eval_id"
 
-    # Setup fresh project with schema for this eval
+    # Setup fresh project for this eval
     local setup_start=$(date +%s)
-    if ! setup_project "$work_dir" "$schema_addition" "$eval_id"; then
+    if ! setup_project "$work_dir" "$eval_id"; then
         echo "FAIL|$eval_id|0|SETUP_FAILED" > "$result_file"
         echo "[$(date +%H:%M:%S)] $eval_id: SETUP FAILED"
         return 1
@@ -679,7 +670,6 @@ main() {
         local eval_name=$(jq -r ".[$idx].name" "$EVAL_FILE")
         local eval_query=$(jq -r ".[$idx].query" "$EVAL_FILE")
         local verify_patterns=$(jq -r ".[$idx].verify_patterns | .[]?" "$EVAL_FILE" 2>/dev/null || echo "")
-        local schema_addition=$(jq -r ".[$idx].schema // empty" "$EVAL_FILE" 2>/dev/null || echo "")
         local negative_patterns=$(jq -r ".[$idx].negative_patterns | .[]?" "$EVAL_FILE" 2>/dev/null || echo "")
 
         # Wait if we've hit max parallelism
@@ -705,7 +695,7 @@ main() {
         done
 
         # Start evaluation in background with timeout
-        run_with_timeout "$EVAL_TIMEOUT" run_evaluation "$eval_id" "$eval_name" "$eval_query" "$verify_patterns" "$schema_addition" "$negative_patterns" &
+        run_with_timeout "$EVAL_TIMEOUT" run_evaluation "$eval_id" "$eval_name" "$eval_query" "$verify_patterns" "$negative_patterns" &
         running_pids+=($!)
         running_evals+=("$eval_id")
     done
