@@ -159,9 +159,36 @@
     "api_key": "$OPENAI_API_KEY",
     "api_endpoint": "$OPENAI_API_ENDPOINT",
     "type": "openai",
-    "default_large_model_id": "gpt-5.1-codex",
-    "default_small_model_id": "gpt-4o",
-    "models": []
+    "default_large_model_id": "global.anthropic.claude-sonnet-4-5-20250929-v1:0",
+    "default_small_model_id": "global.anthropic.claude-haiku-4-5-20251001-v1:0",
+    "models": [
+      {
+        "id": "global.anthropic.claude-sonnet-4-5-20250929-v1:0",
+        "name": "Gateway Claude Sonnet 4.5",
+        "cost_per_1m_in": 3,
+        "cost_per_1m_out": 15,
+        "cost_per_1m_in_cached": 3.75,
+        "cost_per_1m_out_cached": 0.3,
+        "context_window": 200000,
+        "default_max_tokens": 50000,
+        "can_reason": true,
+        "supports_attachments": true,
+        "options": {}
+      },
+      {
+        "id": "global.anthropic.claude-haiku-4-5-20251001-v1:0",
+        "name": "Gateway Claude Haiku 4.5",
+        "cost_per_1m_in": 1,
+        "cost_per_1m_out": 5,
+        "cost_per_1m_in_cached": 1.25,
+        "cost_per_1m_out_cached": 0.1,
+        "context_window": 200000,
+        "default_max_tokens": 32000,
+        "can_reason": true,
+        "supports_attachments": true,
+        "options": {}
+      }
+    ]
   },
   {
     "name": "Google Gemini",

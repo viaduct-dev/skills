@@ -1,8 +1,8 @@
 plugins {
-    kotlin("jvm") version "1.9.22"
+    kotlin("jvm") version "1.9.24"
     id("io.ktor.plugin") version "3.0.3"
-    id("com.airbnb.viaduct.application-gradle-plugin") version "0.20.0"
-    id("com.airbnb.viaduct.module-gradle-plugin") version "0.20.0"
+    id("com.airbnb.viaduct.application-gradle-plugin") version "0.29.0"
+    id("com.airbnb.viaduct.module-gradle-plugin") version "0.29.0"
 }
 
 group = "com.example"
@@ -33,13 +33,16 @@ dependencies {
 
     // Coroutines
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.8.1")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-jdk8:1.8.1")
+    implementation("org.jetbrains.kotlin:kotlin-reflect:1.9.24")
 
     // Jackson
     implementation("com.fasterxml.jackson.module:jackson-module-kotlin:2.17.0")
 
     // Viaduct
-    implementation("com.airbnb.viaduct:service-api:0.20.0")
-    implementation("com.airbnb.viaduct:service-wiring:0.20.0")
+    implementation("com.airbnb.viaduct:api:0.29.0")
+    implementation("com.airbnb.viaduct:runtime:0.29.0")
+    implementation("org.reactivestreams:reactive-streams:1.0.4")
 
     // Logging
     implementation("ch.qos.logback:logback-classic:1.4.14")
