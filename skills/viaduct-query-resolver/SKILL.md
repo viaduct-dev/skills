@@ -91,3 +91,7 @@ class UsersQueryResolver : QueryResolvers.Users() {
     }
 }
 ```
+
+## Connections
+
+If the return type ends in `Connection` or the field accepts `first`, `after`, `last`, or `before`, read `connections.md` first.

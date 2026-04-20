@@ -144,6 +144,7 @@ Evaluations are defined in `test/evaluations.json`:
 ```
 ├── bin/install.js       # npx installer (copies from skills/, strips frontmatter)
 ├── skills/              # Source of truth for all documentation
+│   ├── viaduct-connections/SKILL.md
 │   ├── viaduct-mutations/SKILL.md
 │   ├── viaduct-query-resolver/SKILL.md
 │   ├── viaduct-node-type/SKILL.md
