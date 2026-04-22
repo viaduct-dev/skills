@@ -55,6 +55,7 @@ Add individual skill files to project knowledge, or paste SKILL.md contents into
 
 | Skill / Doc | When Used |
 |-------------|-----------|
+| viaduct-connections | Connection field or query using `first`/`after`/`last`/`before` |
 | viaduct-mutations | Any mutation, CRUD operations, `@idOf` in input types |
 | viaduct-query-resolver | Any query with ID argument |
 | viaduct-field-resolver | Field with `@resolver` directive |

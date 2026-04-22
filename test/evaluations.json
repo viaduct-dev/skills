@@ -120,12 +120,12 @@
       "Creates User and Tag types with implements Node, @resolver, @scope",
       "Adds createdBy: User @resolver to Tag",
       "Creates TagCreatedByResolver with objectValueFragment including createdById",
-      "Returns ctx.nodeFor(ctx.globalIDFor(User.Reflection, createdById))",
+      "Returns ctx.nodeRef(ctx.globalIDFor(User.Reflection, createdById))",
       "Does NOT fetch user data directly"
     ],
     "verify_patterns": [
       "TagResolvers.CreatedBy",
-      "nodeFor",
+      "nodeRef",
       "globalIDFor.*User"
     ]
   },
@@ -192,6 +192,100 @@
       "\\.id\\([a-z]+Id\\)",
       "\\.id\\(uuid\\)",
       "\\.id\\(UUID\\."
+    ]
+  },
+  {
+    "id": "eval-08-forward-connection",
+    "name": "Forward Connection Query",
+    "skills": ["viaduct-connections"],
+    "query": "Create a User entity with id and email fields. Add a paginated usersConnection query that accepts first and after and returns a UserConnection. Return hardcoded data for now. Use the viaduct skill for guidance.",
+    "expected_behavior": [
+      "Creates User type with implements Node, @resolver, @scope",
+      "Creates UserConnection type marked with @connection",
+      "Creates UserEdge type marked with @edge",
+      "Creates usersConnection(first: Int, after: String): UserConnection @resolver",
+      "Creates resolver extending QueryResolvers.UsersConnection()",
+      "Builds the response with UserConnection.Builder and fromList or fromSlice"
+    ],
+    "verify_patterns": [
+      "type UserConnection @connection",
+      "type UserEdge @edge",
+      "usersConnection\\(first: Int, after: String\\): UserConnection! @resolver",
+      "QueryResolvers.UsersConnection",
+      "UserConnection\\.Builder",
+      "fromList|fromSlice"
+    ]
+  },
+  {
+    "id": "gotcha-04-offset-limit-connection",
+    "name": "Gotcha: Offset/Limit Connection Backend",
+    "skills": ["viaduct-connections"],
+    "query": "Create a User entity with id and email fields. Add a usersConnection query that accepts first and after and returns a UserConnection. Implement the resolver using an offset/limit backend shape over a hardcoded list: compute offset and limit from the connection args, fetch limit plus one items, and build the connection response the Viaduct way. Use the viaduct skill for guidance.",
+    "expected_behavior": [
+      "Creates UserConnection and UserEdge schema types",
+      "Uses QueryResolvers.UsersConnection()",
+      "Uses ctx.arguments.toOffsetLimit()",
+      "Uses UserConnection.Builder(ctx).fromSlice(...)",
+      "Does NOT manually decode cursors",
+      "Returns UserConnection, not List<User>"
+    ],
+    "verify_patterns": [
+      "QueryResolvers.UsersConnection",
+      "toOffsetLimit",
+      "fromSlice",
+      "UserConnection\\.Builder"
+    ],
+    "negative_patterns": [
+      "Base64\\.getDecoder",
+      "Base64\\.decode",
+      "substringAfter\\(\":\"\\)",
+      "override suspend fun resolve\\(ctx: Context\\): List<"
+    ]
+  },
+  {
+    "id": "eval-09-native-cursor-connection",
+    "name": "Native Cursor Connection (fromEdges)",
+    "skills": ["viaduct-connections"],
+    "query": "Create a Species entity with id and name fields. Add a speciesConnection query that accepts first and after and returns a SpeciesConnection. The backend returns native cursors — each species record has a cursor string from the backend. Build the edges manually and use fromEdges to assemble the connection. Return hardcoded species with fake cursors for now. Use the viaduct skill for guidance.",
+    "expected_behavior": [
+      "Creates Species type with implements Node, @resolver, @scope",
+      "Creates SpeciesConnection type marked with @connection",
+      "Creates SpeciesEdge type marked with @edge",
+      "Creates speciesConnection(first: Int, after: String): SpeciesConnection @resolver",
+      "Creates resolver extending QueryResolvers.SpeciesConnection()",
+      "Builds SpeciesEdge instances with .cursor(...) set from a backend value",
+      "Calls fromEdges(edges, hasNextPage = ..., hasPreviousPage = ...) on the connection builder",
+      "Does NOT use fromSlice or fromList"
+    ],
+    "verify_patterns": [
+      "type SpeciesConnection @connection",
+      "type SpeciesEdge @edge",
+      "speciesConnection\\(first: Int, after: String\\): SpeciesConnection! @resolver",
+      "QueryResolvers.SpeciesConnection",
+      "SpeciesEdge\\.Builder",
+      "fromEdges"
+    ],
+    "negative_patterns": [
+      "fromSlice",
+      "fromList",
+      "toOffsetLimit"
+    ]
+  },
+  {
+    "id": "gotcha-05-pageinfo-totalcount",
+    "name": "Gotcha: totalCount Belongs on Connection",
+    "skills": ["viaduct-connections"],
+    "query": "Create a User entity with id and email fields. Add a usersConnection query with first and after that returns a paginated UserConnection with total count. Return hardcoded data for now. Use the viaduct skill for guidance.",
+    "expected_behavior": [
+      "Creates UserConnection with totalCount on the connection type",
+      "Keeps PageInfo standard",
+      "Does NOT place totalCount on PageInfo"
+    ],
+    "verify_patterns": [
+      "type UserConnection @connection[\\s\\S]*totalCount: Int"
+    ],
+    "negative_patterns": [
+      "type PageInfo[\\s\\S]*totalCount: Int"
     ]
   }
 ]

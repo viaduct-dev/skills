@@ -65,3 +65,4 @@ class GroupMemberDisplayNameResolver : GroupMemberResolvers.DisplayName() {
 - Only access fields declared in your fragment
 - Field resolvers are NOT set in the NodeResolver - they resolve separately
 - Return type matches the schema field type
+- If the return type ends in `Connection` or the field accepts `first`, `after`, `last`, or `before`, read `connections.md` first

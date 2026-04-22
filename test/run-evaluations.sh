@@ -206,6 +206,34 @@ run_with_timeout() {
     return $exit_code
 }
 
+build_verify_source() {
+    local work_dir="$1"
+    local verify_source="$work_dir/.verify-source.txt"
+
+    : > "$verify_source"
+    if [[ -d "$work_dir/src" ]]; then
+        while IFS= read -r file; do
+            printf '%s\n' "$file" >> "$verify_source"
+        done < <(find "$work_dir/src" -type f | LC_ALL=C sort)
+    fi
+
+    echo "$verify_source"
+}
+
+pattern_matches() {
+    local pattern="$1"
+    local verify_source="$2"
+
+    while IFS= read -r file; do
+        [[ -n "$file" ]] || continue
+        if PATTERN="$pattern" perl -0ne 'exit(/$ENV{PATTERN}/m ? 0 : 1)' "$file" 2>/dev/null; then
+            return 0
+        fi
+    done < "$verify_source"
+
+    return 1
+}
+
 # Pre-warm Gradle daemon and download dependencies
 prewarm_gradle() {
     echo "Pre-warming Gradle daemon and cache..."
@@ -339,11 +367,12 @@ run_with_crush() {
                 echo "Failed to get iap-auth token" >> "$output_file"
                 return 1
             fi
-            # Use repo-local config with gateway model IDs
+            # Use repo-local config with Claude model IDs over DevAIGateway's
+            # OpenAI-compatible API surface.
             XDG_CONFIG_HOME="$CRUSH_CONFIG_DIR/config" \
             XDG_DATA_HOME="$CRUSH_CONFIG_DIR/data" \
-            ANTHROPIC_API_KEY="$auth_token" \
-            ANTHROPIC_API_ENDPOINT="https://devaigateway.a.musta.ch" \
+            OPENAI_API_KEY="$auth_token" \
+            OPENAI_API_ENDPOINT="https://devaigateway.a.musta.ch" \
             CATWALK_URL="http://localhost:1" \
             crush run "$prompt" >> "$output_file" 2>&1
         else
@@ -515,12 +544,14 @@ Work ONLY in $work_dir."
     local patterns_found=0
     local patterns_total=0
     local missing_patterns=""
+    local verify_source
+    verify_source=$(build_verify_source "$work_dir")
 
     if [[ -n "$verify_patterns" ]]; then
         while IFS= read -r pattern; do
             if [[ -n "$pattern" ]]; then
                 ((patterns_total++))
-                if grep -rqE "$pattern" "$work_dir/src" 2>/dev/null; then
+                if pattern_matches "$pattern" "$verify_source"; then
                     ((patterns_found++))
                 else
                     [[ -n "$missing_patterns" ]] && missing_patterns="$missing_patterns, "
@@ -537,7 +568,7 @@ Work ONLY in $work_dir."
     if [[ -n "$negative_patterns" ]]; then
         while IFS= read -r pattern; do
             if [[ -n "$pattern" ]]; then
-                if grep -rqE "$pattern" "$work_dir/src" 2>/dev/null; then
+                if pattern_matches "$pattern" "$verify_source"; then
                     [[ -n "$found_negative" ]] && found_negative="$found_negative, "
                     found_negative="$found_negative$pattern"
                     ((negative_failed++))

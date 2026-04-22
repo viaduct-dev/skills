@@ -9,6 +9,7 @@ const END_MARKER = '<!-- VIADUCT-AGENTS-MD-END -->';
 
 // Map skill directory names to output file names
 const SKILL_MAP = {
+  'viaduct-connections': 'connections.md',
   'viaduct-mutations': 'mutations.md',
   'viaduct-query-resolver': 'query-resolver.md',
   'viaduct-field-resolver': 'field-resolver.md',
@@ -98,6 +99,7 @@ function generateIndex() {
 
 | Task | Read First |
 |------|------------|
+| Connection field or query using \`first\`/\`after\`/\`last\`/\`before\` | connections.md |
 | When authoring any mutation | mutations.md |
 | Any query with ID argument | query-resolver.md |
 | Field with @resolver | field-resolver.md |
