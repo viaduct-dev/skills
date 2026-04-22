@@ -46,6 +46,37 @@ extend type Query {
 - Use `UserConnection.Builder(ctx)` and `User.Builder(ctx)`.
 - If `@connection`, `@edge`, or `PageInfo` seem missing, the Viaduct version is too old. Do not declare them yourself.
 
+## Native Cursor Backends
+
+When the backend returns its own cursors, build edges manually and pass them to `fromEdges()`:
+
+```kotlin
+@OptIn(ExperimentalApi::class)
+@Resolver
+class UsersConnectionResolver : QueryResolvers.UsersConnection() {
+    override suspend fun resolve(ctx: Context): UserConnection {
+        val response = userService.getUsers(
+            cursor = ctx.arguments.after,
+            limit = ctx.arguments.first ?: 20
+        )
+
+        val edges = response.users.map { user ->
+            UserEdge.Builder(ctx)
+                .node(ctx.nodeFor(user.id))
+                .cursor(user.cursor)
+                .build()
+        }
+
+        return UserConnection.Builder(ctx)
+            .fromEdges(edges, hasNextPage = response.hasMore, hasPreviousPage = response.hasPrevious)
+            .build()
+    }
+}
+```
+
+- Use `fromEdges()` when the backend provides its own cursor strings.
+- Build each `XxxEdge` yourself — this is also the right approach when the edge has extra fields (e.g. `role`, `joinedAt`).
+
 ## Offset/Limit Backends
 
 For offset/limit storage, use Viaduct helpers instead of hand-rolled cursor logic:

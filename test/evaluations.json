@@ -243,6 +243,35 @@
     ]
   },
   {
+    "id": "eval-09-native-cursor-connection",
+    "name": "Native Cursor Connection (fromEdges)",
+    "skills": ["viaduct-connections"],
+    "query": "Create a Species entity with id and name fields. Add a speciesConnection query that accepts first and after and returns a SpeciesConnection. The backend returns native cursors — each species record has a cursor string from the backend. Build the edges manually and use fromEdges to assemble the connection. Return hardcoded species with fake cursors for now. Use the viaduct skill for guidance.",
+    "expected_behavior": [
+      "Creates Species type with implements Node, @resolver, @scope",
+      "Creates SpeciesConnection type marked with @connection",
+      "Creates SpeciesEdge type marked with @edge",
+      "Creates speciesConnection(first: Int, after: String): SpeciesConnection @resolver",
+      "Creates resolver extending QueryResolvers.SpeciesConnection()",
+      "Builds SpeciesEdge instances with .cursor(...) set from a backend value",
+      "Calls fromEdges(edges, hasNextPage = ..., hasPreviousPage = ...) on the connection builder",
+      "Does NOT use fromSlice or fromList"
+    ],
+    "verify_patterns": [
+      "type SpeciesConnection @connection",
+      "type SpeciesEdge @edge",
+      "speciesConnection\\(first: Int, after: String\\): SpeciesConnection! @resolver",
+      "QueryResolvers.SpeciesConnection",
+      "SpeciesEdge\\.Builder",
+      "fromEdges"
+    ],
+    "negative_patterns": [
+      "fromSlice",
+      "fromList",
+      "toOffsetLimit"
+    ]
+  },
+  {
     "id": "gotcha-05-pageinfo-totalcount",
     "name": "Gotcha: totalCount Belongs on Connection",
     "skills": ["viaduct-connections"],
