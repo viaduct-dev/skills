@@ -42,7 +42,7 @@ import com.viaduct.resolvers.resolverbases.TagResolvers
 class TagCreatedByResolver : TagResolvers.CreatedBy() {
 
     override suspend fun resolve(ctx: Context): User? {
-        val createdById = ctx.objectValue.getCreatedById()
+        val createdById = ctx.getObjectValue().getCreatedById()
             ?: return null
 
         return ctx.nodeRef(

@@ -1,8 +1,9 @@
 plugins {
-    kotlin("jvm") version "1.9.24"
+    kotlin("jvm") version "1.9.25"
     id("io.ktor.plugin") version "3.0.3"
-    id("com.airbnb.viaduct.application-gradle-plugin") version "0.29.0"
-    id("com.airbnb.viaduct.module-gradle-plugin") version "0.29.0"
+    id("com.google.devtools.ksp") version "1.9.25-1.0.20"
+    id("com.airbnb.viaduct.application-gradle-plugin") version "1.1.0-SNAPSHOT"
+    id("com.airbnb.viaduct.module-gradle-plugin") version "1.1.0-SNAPSHOT"
 }
 
 group = "com.example"
@@ -21,6 +22,7 @@ viaductModule {
 }
 
 repositories {
+    mavenLocal()
     mavenCentral()
 }
 
@@ -34,14 +36,14 @@ dependencies {
     // Coroutines
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.8.1")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-jdk8:1.8.1")
-    implementation("org.jetbrains.kotlin:kotlin-reflect:1.9.24")
+    implementation("org.jetbrains.kotlin:kotlin-reflect:1.9.25")
 
     // Jackson
     implementation("com.fasterxml.jackson.module:jackson-module-kotlin:2.17.0")
 
     // Viaduct
-    implementation("com.airbnb.viaduct:api:0.29.0")
-    implementation("com.airbnb.viaduct:runtime:0.29.0")
+    implementation("com.airbnb.viaduct:api:1.1.0-SNAPSHOT")
+    implementation("com.airbnb.viaduct:runtime:1.1.0-SNAPSHOT")
     implementation("org.reactivestreams:reactive-streams:1.0.4")
 
     // Logging

@@ -1,7 +1,7 @@
 ---
 name: viaduct-field-resolver
 description: |
-  Viaduct field resolver pattern. Use when adding computed fields, using @resolver on fields, accessing parent object data via objectValue, or using selection sets/fragments.
+  Viaduct field resolver pattern. Use when adding computed fields, using @resolver on fields, accessing parent object data via getObjectValue(), or using selection sets/fragments.
 ---
 
 # Viaduct Field Resolver Pattern
@@ -27,8 +27,8 @@ import com.viaduct.resolvers.resolverbases.UserResolvers
 class UserDisplayNameResolver : UserResolvers.DisplayName() {
 
     override suspend fun resolve(ctx: Context): String? {
-        val fn = ctx.objectValue.getFirstName()
-        val ln = ctx.objectValue.getLastName()
+        val fn = ctx.getObjectValue().getFirstName()
+        val ln = ctx.getObjectValue().getLastName()
         return listOfNotNull(fn, ln).joinToString(" ").ifEmpty { null }
     }
 }
@@ -39,7 +39,7 @@ class UserDisplayNameResolver : UserResolvers.DisplayName() {
 | Pattern | Purpose |
 |---------|---------|
 | `@Resolver("fragment _ on Type { field1 field2 }")` | Declares required parent fields |
-| `ctx.objectValue.getFieldName()` | Access parent fields (camelCase getter) |
+| `ctx.getObjectValue().getFieldName()` | Access parent fields (camelCase getter) |
 | `TypeResolvers.FieldName()` | Base class to extend |
 
 ## Selection Set (objectValueFragment)
@@ -52,9 +52,9 @@ The fragment in `@Resolver(...)` tells Viaduct which parent fields you need:
 class GroupMemberDisplayNameResolver : GroupMemberResolvers.DisplayName() {
 
     override suspend fun resolve(ctx: Context): String? {
-        val userId = ctx.objectValue.getUserId()  // Available because declared
-        val role = ctx.objectValue.getRole()      // Available because declared
-        // ctx.objectValue.getEmail() // ❌ NOT available - not in fragment
+        val userId = ctx.getObjectValue().getUserId()  // Available because declared
+        val role = ctx.getObjectValue().getRole()      // Available because declared
+        // ctx.getObjectValue().getEmail() // ❌ NOT available - not in fragment
         return "$userId ($role)"
     }
 }
