@@ -78,3 +78,36 @@ extend type Mutation @scope(to: ["admin"]) {
   setTagInternalNotes(id: ID! @idOf(type: "Tag"), notes: String!): Tag! @resolver
 }
 ```
+
+## ⚠️ CRITICAL: Cross-Type Scope Compatibility
+
+**Every type referenced by another type must share at least one scope with it.** Viaduct validates this at startup and will throw `SchemaScopeValidationError` if not satisfied.
+
+```graphql
+# ❌ FAILS AT STARTUP
+type AdminStats @scope(to: ["admin"]) {
+  topPosts: [BlogPost!]!  # BlogPost is only "default" — no overlap with "admin"
+}
+type BlogPost implements Node @scope(to: ["default"]) { ... }
+
+# ✅ CORRECT — BlogPost also declares "admin" so the reference is valid
+type AdminStats @scope(to: ["admin"]) {
+  topPosts: [BlogPost!]!
+}
+type BlogPost implements Node @scope(to: ["default", "admin"]) { ... }
+```
+
+This applies to **all** cross-type references: field types, return types in Query/Mutation extensions, and interface implementations. If a type appears in an admin query or admin type's fields, it must include `"admin"` in its own `@scope`.
+
+## Runtime Behavior: Scope Denial Is a GraphQL Error, Not a 401
+
+When a client calls an operation that doesn't exist in their scope, Viaduct returns **HTTP 200 with a GraphQL `errors` array** (field not found in schema), not an HTTP 401. The schema presented to each scope simply omits fields the scope doesn't have access to.
+
+```kotlin
+// ❌ WRONG — Viaduct does not return 401 for out-of-scope operations
+resp.status shouldBe HttpStatusCode.Unauthorized
+
+// ✅ CORRECT
+val body = resp.bodyAsText()
+body shouldContain "errors"
+```
