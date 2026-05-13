@@ -78,3 +78,102 @@ extend type Mutation @scope(to: ["admin"]) {
   setTagInternalNotes(id: ID! @idOf(type: "Tag"), notes: String!): Tag! @resolver
 }
 ```
+
+## ⚠️ CRITICAL: Cross-Type Scope Compatibility
+
+**Every type referenced by another type must share at least one scope with it.** Viaduct validates this at startup and will throw `SchemaScopeValidationError` if not satisfied.
+
+```graphql
+# ❌ FAILS AT STARTUP
+type AdminStats @scope(to: ["admin"]) {
+  topPosts: [BlogPost!]!  # BlogPost is only "default" — no overlap with "admin"
+}
+type BlogPost implements Node @scope(to: ["default"]) { ... }
+
+# ✅ CORRECT — BlogPost also declares "admin" so the reference is valid
+type AdminStats @scope(to: ["admin"]) {
+  topPosts: [BlogPost!]!
+}
+type BlogPost implements Node @scope(to: ["default", "admin"]) { ... }
+```
+
+This applies to **all** cross-type references: field types, return types in Query/Mutation extensions, and interface implementations. If a type appears in an admin query or admin type's fields, it must include `"admin"` in its own `@scope`.
+
+## Setting Up Scopes in Tests and the Application
+
+To use scopes, you must configure `BasicViaductFactory` with `SchemaScopeInfo` entries and pass a `SchemaId` when executing:
+
+```kotlin
+import viaduct.service.BasicViaductFactory
+import viaduct.service.SchemaScopeInfo
+import viaduct.service.api.SchemaId
+
+// Configure the factory with named scopes (each scope includes all scope IDs it can see)
+val viaduct = BasicViaductFactory.create(
+    scopedSchemas = listOf(
+        SchemaScopeInfo("default", setOf("default")),
+        SchemaScopeInfo("admin", setOf("default", "admin")),
+    )
+)
+
+// Execute as the "admin" scope
+val adminInput = ExecutionInput.create(operationText = query, variables = emptyMap())
+val result = viaduct.executeAsync(adminInput, SchemaId.Scoped("admin", setOf("admin", "default"))).await()
+
+// Execute as the "default" scope
+val defaultInput = ExecutionInput.create(operationText = query, variables = emptyMap())
+val result = viaduct.executeAsync(defaultInput, SchemaId.Scoped("default", setOf("default"))).await()
+```
+
+Key facts:
+- `SchemaScopeInfo(id, scopeIds)` — registers a named schema. The `scopeIds` are the scopes visible in that schema (e.g. the admin schema sees both `"admin"` and `"default"` fields).
+- `SchemaId.Scoped(id, scopeIds)` — selects which registered schema to execute against. The `id` must match one registered with `SchemaScopeInfo`.
+- `tenantModuleBootstrapper` is optional — omit it in tests if you have no DI container.
+- No scoped schemas registered? Use `BasicViaductFactory.create()` (no args) and `SchemaId.None` — serves everything in one default schema.
+
+### Updating the HTTP Layer for Scopes
+
+The base-template `GraphQL.kt` uses a single `/graphql` endpoint with no scope. To expose scopes via HTTP, add per-scope routes:
+
+```kotlin
+private val viaduct by lazy {
+    BasicViaductFactory.create(
+        scopedSchemas = listOf(
+            SchemaScopeInfo("default", setOf("default")),
+            SchemaScopeInfo("admin", setOf("default", "admin")),
+        )
+    )
+}
+
+fun Application.configureGraphQL() {
+    routing {
+        suspend fun PipelineContext<Unit, ApplicationCall>.handleGraphQL(schemaId: SchemaId) {
+            val request = call.receive<Map<String, Any?>>() as Map<String, Any>
+            val query = request["query"] as? String ?: run {
+                call.respond(HttpStatusCode.BadRequest, mapOf("errors" to listOf(mapOf("message" to "Query required"))))
+                return
+            }
+            @Suppress("UNCHECKED_CAST")
+            val input = ExecutionInput.create(operationText = query, variables = (request["variables"] as? Map<String, Any>) ?: emptyMap())
+            val result = viaduct.executeAsync(input, schemaId).await()
+            call.respond(HttpStatusCode.OK, result.toSpecification())
+        }
+
+        post("/graphql") { handleGraphQL(SchemaId.Scoped("default", setOf("default"))) }
+        post("/graphql/admin") { handleGraphQL(SchemaId.Scoped("admin", setOf("default", "admin"))) }
+    }
+}
+```
+
+## Runtime Behavior: Scope Denial Is a GraphQL Error, Not a 401
+
+When a client calls an operation that doesn't exist in their scope, Viaduct returns **HTTP 200 with a GraphQL `errors` array** (field not found in schema), not an HTTP 401. The schema presented to each scope simply omits fields the scope doesn't have access to.
+
+```kotlin
+// ❌ WRONG — Viaduct does not return 401 for out-of-scope operations
+resp.status shouldBe HttpStatusCode.Unauthorized
+
+// ✅ CORRECT
+val body = resp.bodyAsText()
+body shouldContain "errors"
+```

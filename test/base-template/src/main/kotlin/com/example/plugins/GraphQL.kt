@@ -12,15 +12,10 @@ import io.ktor.server.routing.post
 import io.ktor.server.routing.routing
 import kotlinx.coroutines.future.await
 import viaduct.service.BasicViaductFactory
-import viaduct.service.TenantRegistrationInfo
 import viaduct.service.api.ExecutionInput
 
 private val viaduct by lazy {
-    BasicViaductFactory.create(
-        tenantRegistrationInfo = TenantRegistrationInfo(
-            tenantPackagePrefix = "com.example"
-        )
-    )
+    BasicViaductFactory.create()
 }
 
 fun Application.configureGraphQL() {

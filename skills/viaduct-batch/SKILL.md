@@ -13,7 +13,7 @@ package com.viaduct.resolvers
 
 import com.viaduct.resolvers.resolverbases.GroupResolvers
 import viaduct.api.FieldValue
-import viaduct.api.Resolver
+import viaduct.api.resolver.Resolver
 import viaduct.api.grts.Tag
 
 @Resolver("fragment _ on Group { id }")
@@ -21,14 +21,14 @@ class GroupTagsResolver : GroupResolvers.Tags() {
 
     override suspend fun batchResolve(contexts: List<Context>): List<FieldValue<List<Tag>>> {
         // 1. Collect all parent IDs
-        val groupIds = contexts.map { it.objectValue.getId().internalID }
+        val groupIds = contexts.map { it.getObjectValue().getId().internalID }
 
         // 2. Fetch all data in ONE query
         // TODO: val tagsByGroup = fetchTagsForGroups(groupIds)
 
         // 3. Return results in SAME ORDER as contexts
         return contexts.map { ctx ->
-            val groupId = ctx.objectValue.getId().internalID
+            val groupId = ctx.getObjectValue().getId().internalID
             // Return empty list as placeholder
             FieldValue.ofValue(emptyList<Tag>())
         }
